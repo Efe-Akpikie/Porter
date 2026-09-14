@@ -83,6 +83,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SlotGroups"
+  /public/practice:
+    get:
+      operationId: getPublicPractice
+      tags: [public]
+      summary: Get public practice timezone and booking settings
+      responses:
+        "200":
+          description: Public practice settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicPractice"
   /client/dashboard:
     get:
       operationId: getClientDashboard
@@ -242,6 +254,25 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Appointment"
+    patch:
+      operationId: bulkUpdateAdminAppointments
+      tags: [admin]
+      summary: Update the status of multiple appointments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkAppointmentUpdate"
+      responses:
+        "200":
+          description: Updated appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
   /admin/appointments/{id}:
     patch:
       operationId: updateAdminAppointment
@@ -389,6 +420,35 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Availability"
+  /admin/settings:
+    get:
+      operationId: getAdminSettings
+      tags: [admin]
+      summary: Get session defaults and buffer time
+      responses:
+        "200":
+          description: Practice settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSettings"
+    patch:
+      operationId: updateAdminSettings
+      tags: [admin]
+      summary: Update session defaults and buffer time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticeSettings"
+      responses:
+        "200":
+          description: Updated practice settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSettings"
   /admin/blocked-times:
     get:
       operationId: getBlockedTimes
@@ -421,6 +481,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/BlockedTime"
   /admin/blocked-times/{id}:
+    patch:
+      operationId: updateBlockedTime
+      tags: [admin]
+      summary: Update a blocked time range
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockedTimeInput"
+      responses:
+        "200":
+          description: Updated blocked time
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedTime"
     delete:
       operationId: deleteBlockedTime
       tags: [admin]
@@ -528,7 +607,19 @@ components:
         durationMin: { type: integer }
         status: { $ref: "#/components/schemas/AppointmentStatus" }
         notes: { type: ["string", "null"] }
-      required: [id, clientId, clientName, clientEmail, startTime, endTime, serviceType, durationMin, status, notes]
+      required:
+        [
+          id,
+          clientId,
+          clientName,
+          clientEmail,
+          startTime,
+          endTime,
+          serviceType,
+          durationMin,
+          status,
+          notes,
+        ]
     AppointmentInput:
       type: object
       properties:
@@ -548,6 +639,15 @@ components:
         notes: { type: ["string", "null"] }
         serviceType: { $ref: "#/components/schemas/ServiceType" }
         durationMin: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+    BulkAppointmentUpdate:
+      type: object
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: { type: integer }
+        status: { $ref: "#/components/schemas/AppointmentStatus" }
+      required: [ids, status]
     Slot:
       type: object
       properties:
@@ -569,6 +669,14 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Slot" }
       required: [timezone, morning, afternoon, evening]
+    PublicPractice:
+      type: object
+      properties:
+        timezone: { type: string }
+        settings:
+          type: object
+          additionalProperties: { type: number }
+      required: [timezone, settings]
     ClientDashboard:
       type: object
       properties:
@@ -602,7 +710,17 @@ components:
           type: string
           enum: [waiting, offered, converted, expired, slot_available]
         createdAt: { type: string, format: date-time }
-      required: [id, clientId, clientName, serviceType, preferredDay, preferredTimeWindow, status, createdAt]
+      required:
+        [
+          id,
+          clientId,
+          clientName,
+          serviceType,
+          preferredDay,
+          preferredTimeWindow,
+          status,
+          createdAt,
+        ]
     AdminSummary:
       type: object
       properties:
@@ -672,6 +790,20 @@ components:
           properties:
             id: { type: integer }
           required: [id]
+    PracticeSettings:
+      type: object
+      properties:
+        bufferMin: { type: integer, minimum: 0, maximum: 120 }
+        defaultDurations:
+          type: object
+          properties:
+            couples: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+            individual: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+            child_teen: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+            christian_counseling:
+              { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+          required: [couples, individual, child_teen, christian_counseling]
+      required: [bufferMin, defaultDurations]
     BlockedTimeInput:
       type: object
       properties:

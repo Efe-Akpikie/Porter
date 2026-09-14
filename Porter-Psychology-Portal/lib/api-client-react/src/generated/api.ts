@@ -29,6 +29,7 @@ import type {
   AvailabilityInput,
   BlockedTime,
   BlockedTimeInput,
+  BulkAppointmentUpdate,
   CalendarData,
   ClientDashboard,
   ClientDetail,
@@ -41,7 +42,9 @@ import type {
   GetPublicSlotsParams,
   HealthStatus,
   LoginInput,
+  PracticeSettings,
   ProfileUpdate,
+  PublicPractice,
   SlotGroups,
   UserProfile,
   WaitlistEntry,
@@ -463,6 +466,83 @@ export function useGetPublicSlots<TData = Awaited<ReturnType<typeof getPublicSlo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPublicSlotsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicPracticeUrl = () => {
+
+
+
+
+  return `/api/public/practice`
+}
+
+/**
+ * @summary Get public practice timezone and booking settings
+ */
+export const getPublicPractice = async ( options?: Parameters<typeof customFetch>[1]): Promise<PublicPractice> => {
+
+  return customFetch<PublicPractice>(getGetPublicPracticeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicPracticeQueryKey = () => {
+    return [
+    `/api/public/practice`
+    ] as const;
+    }
+
+
+export const getGetPublicPracticeQueryOptions = <TData = Awaited<ReturnType<typeof getPublicPractice>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicPractice>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicPracticeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicPractice>>> = ({ signal }) => getPublicPractice({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicPractice>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicPracticeQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicPractice>>>
+export type GetPublicPracticeQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get public practice timezone and booking settings
+ */
+
+export function useGetPublicPractice<TData = Awaited<ReturnType<typeof getPublicPractice>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicPractice>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicPracticeQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -1289,6 +1369,94 @@ export function useGetAdminAppointments<TData = Awaited<ReturnType<typeof getAdm
 
 
 
+export const getBulkUpdateAdminAppointmentsUrl = () => {
+
+
+
+
+  return `/api/admin/appointments`
+}
+
+/**
+ * @summary Update the status of multiple appointments
+ */
+export const bulkUpdateAdminAppointments = async (bulkAppointmentUpdate: BulkAppointmentUpdate, options?: Parameters<typeof customFetch>[1]): Promise<Appointment[]> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Appointment[]>(getBulkUpdateAdminAppointmentsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(bulkAppointmentUpdate)
+  }
+);}
+
+
+
+
+
+export const getBulkUpdateAdminAppointmentsMutationKey = () => ['bulkUpdateAdminAppointments'] as const;
+
+export const getBulkUpdateAdminAppointmentsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkUpdateAdminAppointments>>, TError,BulkUpdateAdminAppointmentsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkUpdateAdminAppointments>>, TError,BulkUpdateAdminAppointmentsMutationVariables, TContext> => {
+
+const mutationKey = getBulkUpdateAdminAppointmentsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkUpdateAdminAppointments>>, BulkUpdateAdminAppointmentsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  bulkUpdateAdminAppointments(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkUpdateAdminAppointmentsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkUpdateAdminAppointments>>>
+    export type BulkUpdateAdminAppointmentsMutationBody = BodyType<BulkAppointmentUpdate>
+    export type BulkUpdateAdminAppointmentsMutationError = ErrorType<unknown>
+    export type BulkUpdateAdminAppointmentsMutationVariables = {data: BodyType<BulkAppointmentUpdate>}
+
+    /**
+ * @summary Update the status of multiple appointments
+ */
+export const useBulkUpdateAdminAppointments = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkUpdateAdminAppointments>>, TError,BulkUpdateAdminAppointmentsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkUpdateAdminAppointments>>,
+        TError,
+        BulkUpdateAdminAppointmentsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getBulkUpdateAdminAppointmentsMutationOptions(options));
+    }
+
 export const getUpdateAdminAppointmentUrl = (id: number,) => {
 
 
@@ -1959,6 +2127,171 @@ export const useUpdateAvailability = <TError = ErrorType<unknown>,
       return useMutation(getUpdateAvailabilityMutationOptions(options));
     }
 
+export const getGetAdminSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/settings`
+}
+
+/**
+ * @summary Get session defaults and buffer time
+ */
+export const getAdminSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<PracticeSettings> => {
+
+  return customFetch<PracticeSettings>(getGetAdminSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAdminSettingsQueryKey = () => {
+    return [
+    `/api/admin/settings`
+    ] as const;
+    }
+
+
+export const getGetAdminSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getAdminSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAdminSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSettings>>> = ({ signal }) => getAdminSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAdminSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAdminSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminSettings>>>
+export type GetAdminSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get session defaults and buffer time
+ */
+
+export function useGetAdminSettings<TData = Awaited<ReturnType<typeof getAdminSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAdminSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAdminSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/settings`
+}
+
+/**
+ * @summary Update session defaults and buffer time
+ */
+export const updateAdminSettings = async (practiceSettings: PracticeSettings, options?: Parameters<typeof customFetch>[1]): Promise<PracticeSettings> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<PracticeSettings>(getUpdateAdminSettingsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(practiceSettings)
+  }
+);}
+
+
+
+
+
+export const getUpdateAdminSettingsMutationKey = () => ['updateAdminSettings'] as const;
+
+export const getUpdateAdminSettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminSettings>>, TError,UpdateAdminSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAdminSettings>>, TError,UpdateAdminSettingsMutationVariables, TContext> => {
+
+const mutationKey = getUpdateAdminSettingsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAdminSettings>>, UpdateAdminSettingsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAdminSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAdminSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateAdminSettings>>>
+    export type UpdateAdminSettingsMutationBody = BodyType<PracticeSettings>
+    export type UpdateAdminSettingsMutationError = ErrorType<unknown>
+    export type UpdateAdminSettingsMutationVariables = {data: BodyType<PracticeSettings>}
+
+    /**
+ * @summary Update session defaults and buffer time
+ */
+export const useUpdateAdminSettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminSettings>>, TError,UpdateAdminSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAdminSettings>>,
+        TError,
+        UpdateAdminSettingsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateAdminSettingsMutationOptions(options));
+    }
+
 export const getGetBlockedTimesUrl = () => {
 
 
@@ -2122,6 +2455,95 @@ export const useCreateBlockedTime = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateBlockedTimeMutationOptions(options));
+    }
+
+export const getUpdateBlockedTimeUrl = (id: number,) => {
+
+
+
+
+  return `/api/admin/blocked-times/${id}`
+}
+
+/**
+ * @summary Update a blocked time range
+ */
+export const updateBlockedTime = async (id: number,
+    blockedTimeInput: BlockedTimeInput, options?: Parameters<typeof customFetch>[1]): Promise<BlockedTime> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<BlockedTime>(getUpdateBlockedTimeUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(blockedTimeInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateBlockedTimeMutationKey = () => ['updateBlockedTime'] as const;
+
+export const getUpdateBlockedTimeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBlockedTime>>, TError,UpdateBlockedTimeMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateBlockedTime>>, TError,UpdateBlockedTimeMutationVariables, TContext> => {
+
+const mutationKey = getUpdateBlockedTimeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateBlockedTime>>, UpdateBlockedTimeMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateBlockedTime(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateBlockedTimeMutationResult = NonNullable<Awaited<ReturnType<typeof updateBlockedTime>>>
+    export type UpdateBlockedTimeMutationBody = BodyType<BlockedTimeInput>
+    export type UpdateBlockedTimeMutationError = ErrorType<unknown>
+    export type UpdateBlockedTimeMutationVariables = {id: number;data: BodyType<BlockedTimeInput>}
+
+    /**
+ * @summary Update a blocked time range
+ */
+export const useUpdateBlockedTime = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBlockedTime>>, TError,UpdateBlockedTimeMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateBlockedTime>>,
+        TError,
+        UpdateBlockedTimeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateBlockedTimeMutationOptions(options));
     }
 
 export const getDeleteBlockedTimeUrl = (id: number,) => {

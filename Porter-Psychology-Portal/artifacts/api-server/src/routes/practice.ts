@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
+import { z } from "zod";
 import {
   CancelClientAppointmentParams,
   CreateAppointmentBody,
@@ -36,6 +37,14 @@ import {
   requireRole,
   type AuthenticatedRequest,
 } from "../lib/auth";
+import {
+  getZonedParts,
+  localDayBounds,
+  timeWindowForInstant,
+  weekdayForDate,
+  zonedDateKey,
+  zonedDateTimeToUtc,
+} from "../lib/timezone";
 
 const router: IRouter = Router();
 const adminOnly = requireRole("admin");
@@ -79,12 +88,7 @@ function waitlistResponse(row: {
 }
 
 function getDayOfWeek(date: string) {
-  return new Date(`${date}T12:00:00Z`).getUTCDay();
-}
-
-function localDateTime(date: string, time: string) {
-  const offset = date >= "2026-03-08" && date < "2026-11-01" ? "-07:00" : "-08:00";
-  return new Date(`${date}T${time}:00${offset}`);
+  return weekdayForDate(date);
 }
 
 function formatSlotLabel(date: Date) {
@@ -96,6 +100,14 @@ function formatSlotLabel(date: Date) {
 }
 
 function buildSlots(date: string, duration: number) {
+  const bufferMin = Number(
+    (
+      sqlite
+        .prepare("SELECT value FROM practice_settings WHERE key = 'buffer_min'")
+        .get() as { value?: string } | undefined
+    )?.value ?? 0,
+  );
+  const bounds = localDayBounds(date, ADMIN_TIMEZONE);
   const availability = sqlite
     .prepare(
       "SELECT * FROM availability WHERE day_of_week = ? AND is_active = 1 ORDER BY start_time",
@@ -109,18 +121,18 @@ function buildSlots(date: string, duration: number) {
       `SELECT start_time, end_time FROM appointments
        WHERE status NOT IN ('cancelled') AND start_time < ? AND end_time > ?`,
     )
-    .all(
-      new Date(`${date}T23:59:59Z`).toISOString(),
-      new Date(`${date}T00:00:00Z`).toISOString(),
-    ) as Array<{ start_time: string; end_time: string }>;
+    .all(bounds.end.toISOString(), bounds.start.toISOString()) as Array<{
+    start_time: string;
+    end_time: string;
+  }>;
   const blocked = sqlite
     .prepare(
       "SELECT start_time, end_time FROM blocked_times WHERE start_time < ? AND end_time > ?",
     )
-    .all(
-      new Date(`${date}T23:59:59Z`).toISOString(),
-      new Date(`${date}T00:00:00Z`).toISOString(),
-    ) as Array<{ start_time: string; end_time: string }>;
+    .all(bounds.end.toISOString(), bounds.start.toISOString()) as Array<{
+    start_time: string;
+    end_time: string;
+  }>;
   const groups = {
     morning: [] as Array<{ startTime: string; endTime: string; label: string }>,
     afternoon: [] as Array<{
@@ -136,8 +148,8 @@ function buildSlots(date: string, duration: number) {
   };
   const now = Date.now();
   for (const window of availability) {
-    const start = localDateTime(date, window.start_time);
-    const end = localDateTime(date, window.end_time);
+    const start = zonedDateTimeToUtc(date, window.start_time, ADMIN_TIMEZONE);
+    const end = zonedDateTimeToUtc(date, window.end_time, ADMIN_TIMEZONE);
     for (
       let cursor = start.getTime();
       cursor + duration * 60_000 <= end.getTime();
@@ -145,24 +157,69 @@ function buildSlots(date: string, duration: number) {
     ) {
       const slotStart = new Date(cursor);
       const slotEnd = new Date(cursor + duration * 60_000);
-      const conflicts = [...appointments, ...blocked].some(
-        (item) =>
-          new Date(item.start_time).getTime() < slotEnd.getTime() &&
-          new Date(item.end_time).getTime() > slotStart.getTime(),
-      );
+      const conflicts = [...appointments, ...blocked].some((item, index) => {
+        const isAppointment = index < appointments.length;
+        const padding = isAppointment ? bufferMin * 60_000 : 0;
+        return (
+          new Date(item.start_time).getTime() - padding < slotEnd.getTime() &&
+          new Date(item.end_time).getTime() + padding > slotStart.getTime()
+        );
+      });
       if (slotStart.getTime() <= now || conflicts) continue;
       const slot = {
         startTime: slotStart.toISOString(),
         endTime: slotEnd.toISOString(),
         label: formatSlotLabel(slotStart),
       };
-      const hour = slotStart.getHours();
-      if (hour < 12) groups.morning.push(slot);
-      else if (hour < 17) groups.afternoon.push(slot);
-      else groups.evening.push(slot);
+      groups[timeWindowForInstant(slotStart, ADMIN_TIMEZONE)].push(slot);
     }
   }
   return { timezone: ADMIN_TIMEZONE, ...groups };
+}
+
+function hasSchedulingConflict(
+  start: Date,
+  end: Date,
+  excludeAppointmentId?: number,
+) {
+  const bufferMin = Number(
+    (
+      sqlite
+        .prepare("SELECT value FROM practice_settings WHERE key = 'buffer_min'")
+        .get() as { value?: string } | undefined
+    )?.value ?? 0,
+  );
+  const paddedStart = new Date(
+    start.getTime() - bufferMin * 60_000,
+  ).toISOString();
+  const paddedEnd = new Date(end.getTime() + bufferMin * 60_000).toISOString();
+  const appointment = sqlite
+    .prepare(
+      `SELECT id FROM appointments
+       WHERE status != 'cancelled' AND start_time < ? AND end_time > ?
+       AND (? IS NULL OR id != ?)`,
+    )
+    .get(
+      paddedEnd,
+      paddedStart,
+      excludeAppointmentId ?? null,
+      excludeAppointmentId ?? null,
+    );
+  const blocked = sqlite
+    .prepare(
+      "SELECT id FROM blocked_times WHERE start_time < ? AND end_time > ?",
+    )
+    .get(end.toISOString(), start.toISOString());
+  return Boolean(appointment || blocked);
+}
+
+function validateDateRange(start: Date, end: Date, durationMin: number) {
+  return (
+    Number.isFinite(start.getTime()) &&
+    Number.isFinite(end.getTime()) &&
+    end.getTime() > start.getTime() &&
+    end.getTime() - start.getTime() === durationMin * 60_000
+  );
 }
 
 router.post("/auth/login", (request, response) => {
@@ -170,8 +227,7 @@ router.post("/auth/login", (request, response) => {
   const user = sqlite
     .prepare("SELECT * FROM users WHERE lower(email) = lower(?)")
     .get(input.email) as
-    | (ReturnType<typeof getUserById> & { password_hash: string })
-    | undefined;
+    (ReturnType<typeof getUserById> & { password_hash: string }) | undefined;
   if (!user || !bcrypt.compareSync(input.password, user.password_hash)) {
     response.status(401).json({ error: "Email or password is incorrect" });
     return;
@@ -197,13 +253,15 @@ router.get("/auth/me", (request, response) => {
     response.status(401).json({ error: "Authentication required" });
     return;
   }
-  response.json(GetCurrentUserResponse.parse({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    timezone: user.timezone,
-  }));
+  response.json(
+    GetCurrentUserResponse.parse({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      timezone: user.timezone,
+    }),
+  );
 });
 
 router.get("/public/slots", (request, response) => {
@@ -211,7 +269,20 @@ router.get("/public/slots", (request, response) => {
     date: new Date(`${String(request.query.date)}T00:00:00Z`),
     duration: Number(request.query.duration),
   });
-  response.json(buildSlots(input.date.toISOString().slice(0, 10), input.duration));
+  response.json(
+    buildSlots(input.date.toISOString().slice(0, 10), input.duration),
+  );
+});
+
+router.get("/public/practice", (_request, response) => {
+  const settings = Object.fromEntries(
+    (
+      sqlite
+        .prepare("SELECT key, value FROM practice_settings")
+        .all() as Array<{ key: string; value: string }>
+    ).map(({ key, value }) => [key, Number(value)]),
+  );
+  response.json({ timezone: ADMIN_TIMEZONE, settings });
 });
 
 router.get("/client/dashboard", clientOnly, (request, response) => {
@@ -230,7 +301,11 @@ router.get("/client/dashboard", clientOnly, (request, response) => {
        JOIN users u ON u.id = w.client_id WHERE w.client_id = ? ORDER BY w.created_at DESC`,
     )
     .all(user.id);
-  response.json({ upcoming: asAppointments(upcoming), past: asAppointments(past), waitlist: waitlist.map(waitlistResponse) });
+  response.json({
+    upcoming: asAppointments(upcoming),
+    past: asAppointments(past),
+    waitlist: waitlist.map(waitlistResponse),
+  });
 });
 
 router.get("/client/profile", clientOnly, (request, response) => {
@@ -241,11 +316,18 @@ router.get("/client/profile", clientOnly, (request, response) => {
 router.patch("/client/profile", clientOnly, (request, response) => {
   const input = UpdateClientProfileBody.parse(request.body);
   const userId = (request as AuthenticatedRequest).user!.id;
+  const current = getUserById(userId)!;
   sqlite
     .prepare(
       "UPDATE users SET name = COALESCE(?, name), phone = ?, timezone = COALESCE(?, timezone), notes = ? WHERE id = ?",
     )
-    .run(input.name ?? null, input.phone ?? null, input.timezone ?? null, input.notes ?? null, userId);
+    .run(
+      input.name ?? null,
+      input.phone === undefined ? current.phone : input.phone,
+      input.timezone ?? null,
+      input.notes === undefined ? current.notes : input.notes,
+      userId,
+    );
   response.json(userResponse(getUserById(userId)!));
 });
 
@@ -273,17 +355,23 @@ router.post(
     sqlite
       .prepare("UPDATE appointments SET status = 'cancelled' WHERE id = ?")
       .run(id);
-    const day = getDayOfWeek(appointment.start_time.slice(0, 10));
+    const localDate = zonedDateKey(appointment.start_time, ADMIN_TIMEZONE);
+    const day = getDayOfWeek(localDate);
+    const timeWindow = timeWindowForInstant(
+      appointment.start_time,
+      ADMIN_TIMEZONE,
+    );
     sqlite
       .prepare(
         `UPDATE waitlist SET status = 'slot_available'
          WHERE id = (
            SELECT id FROM waitlist
            WHERE status = 'waiting' AND preferred_day = ?
+             AND preferred_time_window = ? AND service_type = ?
            ORDER BY created_at ASC LIMIT 1
          )`,
       )
-      .run(day);
+      .run(day, timeWindow, appointment.service_type);
     // TODO: integrate email service for cancellation and waitlist availability.
     response.json(appointmentResponse(getAppointment(id)!));
   },
@@ -298,13 +386,20 @@ router.post("/client/waitlist", clientOnly, (request, response) => {
        (client_id, service_type, preferred_day, preferred_time_window, status)
        VALUES (?, ?, ?, ?, 'waiting')`,
     )
-    .run(userId, input.serviceType, input.preferredDay, input.preferredTimeWindow);
+    .run(
+      userId,
+      input.serviceType,
+      input.preferredDay,
+      input.preferredTimeWindow,
+    );
   const entry = sqlite
     .prepare(
       `SELECT w.*, u.name AS client_name FROM waitlist w JOIN users u ON u.id = w.client_id WHERE w.id = ?`,
     )
     .get(result.lastInsertRowid);
-  response.status(201).json(waitlistResponse(entry as Parameters<typeof waitlistResponse>[0]));
+  response
+    .status(201)
+    .json(waitlistResponse(entry as Parameters<typeof waitlistResponse>[0]));
 });
 
 router.post("/appointments", requireAuth, (request, response) => {
@@ -313,13 +408,34 @@ router.post("/appointments", requireAuth, (request, response) => {
   const clientId = requester.role === "admin" ? input.clientId : requester.id;
   const start = new Date(input.startTime);
   const end = new Date(input.endTime);
-  const conflict = sqlite
-    .prepare(
-      `SELECT id FROM appointments
-       WHERE status NOT IN ('cancelled') AND start_time < ? AND end_time > ?`,
-    )
-    .get(end.toISOString(), start.toISOString());
-  if (conflict) {
+  if (!validateDateRange(start, end, input.durationMin)) {
+    response
+      .status(400)
+      .json({ error: "Appointment times and duration do not match" });
+    return;
+  }
+  if (start.getTime() <= Date.now()) {
+    response
+      .status(400)
+      .json({ error: "Appointments must be scheduled in the future" });
+    return;
+  }
+  if (requester.role === "client") {
+    const localDate = zonedDateKey(start, ADMIN_TIMEZONE);
+    const slots = buildSlots(localDate, input.durationMin);
+    const available = [
+      ...slots.morning,
+      ...slots.afternoon,
+      ...slots.evening,
+    ].some((slot) => slot.startTime === start.toISOString());
+    if (!available) {
+      response
+        .status(409)
+        .json({ error: "That time is outside current availability" });
+      return;
+    }
+  }
+  if (hasSchedulingConflict(start, end)) {
     response.status(409).json({ error: "That time is no longer available" });
     return;
   }
@@ -338,21 +454,34 @@ router.post("/appointments", requireAuth, (request, response) => {
       input.notes ?? null,
     );
   // TODO: integrate email service for booking confirmation.
-  response.status(201).json(appointmentResponse(getAppointment(Number(result.lastInsertRowid))!));
+  response
+    .status(201)
+    .json(appointmentResponse(getAppointment(Number(result.lastInsertRowid))!));
 });
 
 router.get("/admin/summary", adminOnly, (_request, response) => {
   const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10);
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - today.getDay() + 1);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
+  const todayKey = zonedDateKey(today, ADMIN_TIMEZONE);
+  const todayBounds = localDayBounds(todayKey, ADMIN_TIMEZONE);
+  const localNoon = new Date(`${todayKey}T12:00:00Z`);
+  localNoon.setUTCDate(
+    localNoon.getUTCDate() - ((localNoon.getUTCDay() + 6) % 7),
+  );
+  const weekStartKey = localNoon.toISOString().slice(0, 10);
+  const weekStart = zonedDateTimeToUtc(weekStartKey, "00:00", ADMIN_TIMEZONE);
+  localNoon.setUTCDate(localNoon.getUTCDate() + 7);
+  const weekEnd = zonedDateTimeToUtc(
+    localNoon.toISOString().slice(0, 10),
+    "00:00",
+    ADMIN_TIMEZONE,
+  );
   const todayCount = sqlite
     .prepare(
-      "SELECT COUNT(*) AS count FROM appointments WHERE date(start_time) = ? AND status NOT IN ('cancelled')",
+      "SELECT COUNT(*) AS count FROM appointments WHERE start_time >= ? AND start_time < ? AND status NOT IN ('cancelled')",
     )
-    .get(todayKey) as { count: number };
+    .get(todayBounds.start.toISOString(), todayBounds.end.toISOString()) as {
+    count: number;
+  };
   const weekCount = sqlite
     .prepare(
       "SELECT COUNT(*) AS count FROM appointments WHERE start_time >= ? AND start_time < ? AND status NOT IN ('cancelled')",
@@ -416,7 +545,14 @@ router.get("/admin/appointments", adminOnly, (request, response) => {
     clauses.push("a.start_time < ?");
     params.push(input.end);
   }
-  response.json(asAppointments(appointmentList(clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params)));
+  response.json(
+    asAppointments(
+      appointmentList(
+        clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
+        params,
+      ),
+    ),
+  );
 });
 
 router.patch("/admin/appointments/:id", adminOnly, (request, response) => {
@@ -429,6 +565,25 @@ router.patch("/admin/appointments/:id", adminOnly, (request, response) => {
   }
   const nextStart = input.startTime ?? current.start_time;
   const nextEnd = input.endTime ?? current.end_time;
+  const nextDuration = input.durationMin ?? current.duration_min;
+  const scheduleChanged =
+    input.startTime !== undefined ||
+    input.endTime !== undefined ||
+    input.durationMin !== undefined;
+  const start = new Date(nextStart);
+  const end = new Date(nextEnd);
+  if (scheduleChanged && !validateDateRange(start, end, nextDuration)) {
+    response
+      .status(400)
+      .json({ error: "Appointment times and duration do not match" });
+    return;
+  }
+  if (scheduleChanged && hasSchedulingConflict(start, end, id)) {
+    response
+      .status(409)
+      .json({ error: "That time conflicts with the calendar" });
+    return;
+  }
   sqlite
     .prepare(
       `UPDATE appointments SET start_time = ?, end_time = ?, status = COALESCE(?, status),
@@ -439,12 +594,36 @@ router.patch("/admin/appointments/:id", adminOnly, (request, response) => {
       nextStart,
       nextEnd,
       input.status ?? null,
-      input.notes ?? null,
+      input.notes === undefined ? current.notes : input.notes,
       input.serviceType ?? null,
-      input.durationMin ?? null,
+      nextDuration,
       id,
     );
   response.json(appointmentResponse(getAppointment(id)!));
+});
+
+router.patch("/admin/appointments", adminOnly, (request, response) => {
+  const input = z
+    .object({
+      ids: z.array(z.number().int().positive()).min(1),
+      status: z.enum([
+        "pending",
+        "confirmed",
+        "completed",
+        "cancelled",
+        "no_show",
+      ]),
+    })
+    .parse(request.body);
+  const placeholders = input.ids.map(() => "?").join(",");
+  sqlite
+    .prepare(`UPDATE appointments SET status = ? WHERE id IN (${placeholders})`)
+    .run(input.status, ...input.ids);
+  response.json(
+    asAppointments(
+      appointmentList(`WHERE a.id IN (${placeholders})`, input.ids),
+    ),
+  );
 });
 
 router.get("/admin/clients", adminOnly, (request, response) => {
@@ -470,8 +649,11 @@ router.get("/admin/clients", adminOnly, (request, response) => {
       name: (row as { name: string }).name,
       email: (row as { email: string }).email,
       phone: (row as { phone: string | null }).phone,
-      appointmentCount: Number((row as { appointment_count: number }).appointment_count),
-      lastAppointment: (row as { last_appointment: string | null }).last_appointment,
+      appointmentCount: Number(
+        (row as { appointment_count: number }).appointment_count,
+      ),
+      lastAppointment: (row as { last_appointment: string | null })
+        .last_appointment,
     }));
   response.json(clients);
 });
@@ -490,7 +672,9 @@ router.get("/admin/clients/:id", adminOnly, (request, response) => {
     .all(id);
   response.json({
     profile: userResponse(client),
-    appointments: asAppointments(appointmentList("WHERE a.client_id = ?", [id])),
+    appointments: asAppointments(
+      appointmentList("WHERE a.client_id = ?", [id]),
+    ),
     notes,
   });
 });
@@ -504,13 +688,15 @@ router.post("/admin/clients/:id/notes", adminOnly, (request, response) => {
       "INSERT INTO client_notes (client_id, admin_id, content) VALUES (?, ?, ?)",
     )
     .run(id, adminId, input.content);
-  response.status(201).json(
-    sqlite
-      .prepare(
-        "SELECT id, client_id AS clientId, admin_id AS adminId, content, created_at AS createdAt FROM client_notes WHERE id = ?",
-      )
-      .get(result.lastInsertRowid),
-  );
+  response
+    .status(201)
+    .json(
+      sqlite
+        .prepare(
+          "SELECT id, client_id AS clientId, admin_id AS adminId, content, created_at AS createdAt FROM client_notes WHERE id = ?",
+        )
+        .get(result.lastInsertRowid),
+    );
 });
 
 router.get("/admin/waitlist", adminOnly, (_request, response) => {
@@ -521,13 +707,43 @@ router.get("/admin/waitlist", adminOnly, (_request, response) => {
          JOIN users u ON u.id = w.client_id ORDER BY w.created_at ASC`,
       )
       .all()
-      .map((entry) => waitlistResponse(entry as Parameters<typeof waitlistResponse>[0])),
+      .map((entry) =>
+        waitlistResponse(entry as Parameters<typeof waitlistResponse>[0]),
+      ),
   );
 });
 
 router.post("/admin/waitlist/:id/convert", adminOnly, (request, response) => {
   const id = Number(request.params.id);
   const input = CreateAppointmentBody.parse(request.body);
+  const entry = sqlite
+    .prepare("SELECT client_id, status FROM waitlist WHERE id = ?")
+    .get(id) as { client_id: number; status: string } | undefined;
+  if (!entry) {
+    response.status(404).json({ error: "Waitlist entry not found" });
+    return;
+  }
+  if (entry.status === "converted") {
+    response.status(409).json({ error: "Waitlist entry is already converted" });
+    return;
+  }
+  const start = new Date(input.startTime);
+  const end = new Date(input.endTime);
+  if (
+    !validateDateRange(start, end, input.durationMin) ||
+    start.getTime() <= Date.now()
+  ) {
+    response
+      .status(400)
+      .json({ error: "Choose a valid future appointment time" });
+    return;
+  }
+  if (hasSchedulingConflict(start, end)) {
+    response
+      .status(409)
+      .json({ error: "That time conflicts with the calendar" });
+    return;
+  }
   const result = sqlite
     .prepare(
       `INSERT INTO appointments
@@ -535,15 +751,19 @@ router.post("/admin/waitlist/:id/convert", adminOnly, (request, response) => {
        VALUES (?, ?, ?, ?, ?, 'confirmed', ?)`,
     )
     .run(
-      input.clientId,
-      input.startTime,
-      input.endTime,
+      entry.client_id,
+      start.toISOString(),
+      end.toISOString(),
       input.serviceType,
       input.durationMin,
       input.notes ?? null,
     );
-  sqlite.prepare("UPDATE waitlist SET status = 'converted' WHERE id = ?").run(id);
-  response.status(201).json(appointmentResponse(getAppointment(Number(result.lastInsertRowid))!));
+  sqlite
+    .prepare("UPDATE waitlist SET status = 'converted' WHERE id = ?")
+    .run(id);
+  response
+    .status(201)
+    .json(appointmentResponse(getAppointment(Number(result.lastInsertRowid))!));
 });
 
 router.get("/admin/availability", adminOnly, (_request, response) => {
@@ -553,7 +773,10 @@ router.get("/admin/availability", adminOnly, (_request, response) => {
         "SELECT id, day_of_week AS dayOfWeek, start_time AS startTime, end_time AS endTime, is_active AS isActive FROM availability ORDER BY day_of_week, start_time",
       )
       .all()
-      .map((row) => ({ ...row as object, isActive: Boolean((row as { isActive: number }).isActive) })),
+      .map((row) => ({
+        ...(row as object),
+        isActive: Boolean((row as { isActive: number }).isActive),
+      })),
   );
 });
 
@@ -565,7 +788,12 @@ router.patch("/admin/availability", adminOnly, (request, response) => {
       "INSERT INTO availability (day_of_week, start_time, end_time, is_active) VALUES (?, ?, ?, ?)",
     );
     input.forEach((item) =>
-      insert.run(item.dayOfWeek, item.startTime, item.endTime, item.isActive ? 1 : 0),
+      insert.run(
+        item.dayOfWeek,
+        item.startTime,
+        item.endTime,
+        item.isActive ? 1 : 0,
+      ),
     );
   });
   update();
@@ -575,8 +803,75 @@ router.patch("/admin/availability", adminOnly, (request, response) => {
         "SELECT id, day_of_week AS dayOfWeek, start_time AS startTime, end_time AS endTime, is_active AS isActive FROM availability ORDER BY day_of_week, start_time",
       )
       .all()
-      .map((row) => ({ ...row as object, isActive: Boolean((row as { isActive: number }).isActive) })),
+      .map((row) => ({
+        ...(row as object),
+        isActive: Boolean((row as { isActive: number }).isActive),
+      })),
   );
+});
+
+router.get("/admin/settings", adminOnly, (_request, response) => {
+  const values = Object.fromEntries(
+    (
+      sqlite
+        .prepare("SELECT key, value FROM practice_settings")
+        .all() as Array<{ key: string; value: string }>
+    ).map(({ key, value }) => [key, Number(value)]),
+  );
+  response.json({
+    bufferMin: values.buffer_min ?? 0,
+    defaultDurations: {
+      couples: values.default_couples_duration ?? 60,
+      individual: values.default_individual_duration ?? 50,
+      child_teen: values.default_child_teen_duration ?? 50,
+      christian_counseling: values.default_christian_counseling_duration ?? 50,
+    },
+  });
+});
+
+router.patch("/admin/settings", adminOnly, (request, response) => {
+  const input = z
+    .object({
+      bufferMin: z.number().int().min(0).max(120),
+      defaultDurations: z.object({
+        couples: z
+          .enum(["30", "45", "50", "60", "80", "90", "120"])
+          .or(z.number()),
+        individual: z
+          .enum(["30", "45", "50", "60", "80", "90", "120"])
+          .or(z.number()),
+        child_teen: z
+          .enum(["30", "45", "50", "60", "80", "90", "120"])
+          .or(z.number()),
+        christian_counseling: z
+          .enum(["30", "45", "50", "60", "80", "90", "120"])
+          .or(z.number()),
+      }),
+    })
+    .parse(request.body);
+  const allowed = new Set([30, 45, 50, 60, 80, 90, 120]);
+  const durations = Object.fromEntries(
+    Object.entries(input.defaultDurations).map(([key, value]) => [
+      key,
+      Number(value),
+    ]),
+  );
+  if (Object.values(durations).some((value) => !allowed.has(value))) {
+    response.status(400).json({ error: "Unsupported default duration" });
+    return;
+  }
+  const save = sqlite.prepare(
+    `INSERT INTO practice_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  );
+  const transaction = sqlite.transaction(() => {
+    save.run("buffer_min", String(input.bufferMin));
+    Object.entries(durations).forEach(([service, value]) =>
+      save.run(`default_${service}_duration`, String(value)),
+    );
+  });
+  transaction();
+  response.json({ bufferMin: input.bufferMin, defaultDurations: durations });
 });
 
 router.get("/admin/blocked-times", adminOnly, (_request, response) => {
@@ -591,22 +886,62 @@ router.get("/admin/blocked-times", adminOnly, (_request, response) => {
 
 router.post("/admin/blocked-times", adminOnly, (request, response) => {
   const input = CreateBlockedTimeBody.parse(request.body);
+  const start = new Date(input.startTime);
+  const end = new Date(input.endTime);
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    end <= start
+  ) {
+    response.status(400).json({ error: "Choose a valid blocked-time range" });
+    return;
+  }
   const result = sqlite
     .prepare(
       "INSERT INTO blocked_times (start_time, end_time, reason) VALUES (?, ?, ?)",
     )
-    .run(input.startTime, input.endTime, input.reason);
-  response.status(201).json(
+    .run(start.toISOString(), end.toISOString(), input.reason);
+  response
+    .status(201)
+    .json(
+      sqlite
+        .prepare(
+          "SELECT id, start_time AS startTime, end_time AS endTime, reason, created_at AS createdAt FROM blocked_times WHERE id = ?",
+        )
+        .get(result.lastInsertRowid),
+    );
+});
+
+router.patch("/admin/blocked-times/:id", adminOnly, (request, response) => {
+  const id = Number(request.params.id);
+  const input = CreateBlockedTimeBody.parse(request.body);
+  const result = sqlite
+    .prepare(
+      "UPDATE blocked_times SET start_time = ?, end_time = ?, reason = ? WHERE id = ?",
+    )
+    .run(
+      new Date(input.startTime).toISOString(),
+      new Date(input.endTime).toISOString(),
+      input.reason,
+      id,
+    );
+  if (result.changes === 0) {
+    response.status(404).json({ error: "Blocked time not found" });
+    return;
+  }
+  response.json(
     sqlite
       .prepare(
         "SELECT id, start_time AS startTime, end_time AS endTime, reason, created_at AS createdAt FROM blocked_times WHERE id = ?",
       )
-      .get(result.lastInsertRowid),
+      .get(id),
   );
 });
 
 router.delete("/admin/blocked-times/:id", adminOnly, (request, response) => {
-  sqlite.prepare("DELETE FROM blocked_times WHERE id = ?").run(Number(request.params.id));
+  sqlite
+    .prepare("DELETE FROM blocked_times WHERE id = ?")
+    .run(Number(request.params.id));
   response.status(204).send();
 });
 

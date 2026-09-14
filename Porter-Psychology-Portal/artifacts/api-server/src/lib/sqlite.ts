@@ -2,9 +2,16 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import bcrypt from "bcryptjs";
+import {
+  assertTimeZone,
+  weekdayForDate,
+  zonedDateKey,
+  zonedDateTimeToUtc,
+} from "./timezone";
 
-export const ADMIN_TIMEZONE =
-  process.env.ADMIN_TIMEZONE ?? "America/Vancouver";
+export const ADMIN_TIMEZONE = assertTimeZone(
+  process.env.ADMIN_TIMEZONE ?? "America/Vancouver",
+);
 const databasePath = resolve(
   process.env.SQLITE_PATH ?? "./data/porter-psychology.sqlite",
 );
@@ -74,11 +81,15 @@ sqlite.exec(`
     status TEXT NOT NULL DEFAULT 'waiting',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS practice_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
-const count = sqlite
-  .prepare("SELECT COUNT(*) AS count FROM users")
-  .get() as { count: number };
+const count = sqlite.prepare("SELECT COUNT(*) AS count FROM users").get() as {
+  count: number;
+};
 
 if (count.count === 0) {
   const seed = sqlite.transaction(() => {
@@ -135,11 +146,19 @@ if (count.count === 0) {
       ).lastInsertRowid,
     ];
 
+    const monday = new Date(
+      `${zonedDateKey(new Date(), ADMIN_TIMEZONE)}T12:00:00Z`,
+    );
+    const day = weekdayForDate(monday.toISOString().slice(0, 10));
+    monday.setUTCDate(monday.getUTCDate() - ((day + 6) % 7));
     const toLocalIso = (dayOffset: number, hour: number, minute = 0) => {
-      const date = new Date();
-      date.setDate(date.getDate() + dayOffset);
-      date.setHours(hour, minute, 0, 0);
-      return date.toISOString();
+      const date = new Date(monday);
+      date.setUTCDate(date.getUTCDate() + dayOffset);
+      return zonedDateTimeToUtc(
+        date.toISOString().slice(0, 10),
+        `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+        ADMIN_TIMEZONE,
+      ).toISOString();
     };
     const addAppointment = sqlite.prepare(`
       INSERT INTO appointments
@@ -148,8 +167,8 @@ if (count.count === 0) {
     `);
     addAppointment.run(
       clientIds[0],
-      toLocalIso(1, 10),
-      toLocalIso(1, 11),
+      toLocalIso(0, 10),
+      toLocalIso(0, 11),
       "couples",
       60,
       "confirmed",
@@ -157,8 +176,8 @@ if (count.count === 0) {
     );
     addAppointment.run(
       clientIds[1],
-      toLocalIso(2, 13, 30),
-      toLocalIso(2, 14, 20),
+      toLocalIso(1, 13, 30),
+      toLocalIso(1, 14, 20),
       "individual",
       50,
       "confirmed",
@@ -166,8 +185,8 @@ if (count.count === 0) {
     );
     addAppointment.run(
       clientIds[2],
-      toLocalIso(3, 9),
-      toLocalIso(3, 10, 20),
+      toLocalIso(2, 9),
+      toLocalIso(2, 10, 20),
       "couples",
       80,
       "pending",
@@ -175,8 +194,8 @@ if (count.count === 0) {
     );
     addAppointment.run(
       clientIds[3],
-      toLocalIso(-2, 15),
-      toLocalIso(-2, 16),
+      toLocalIso(3, 15),
+      toLocalIso(3, 16),
       "child_teen",
       60,
       "completed",
@@ -203,10 +222,32 @@ if (count.count === 0) {
       .prepare(
         "INSERT INTO client_notes (client_id, admin_id, content) VALUES (?, ?, ?)",
       )
-      .run(clientIds[0], admin.lastInsertRowid, "Review preferred check-in format.");
+      .run(
+        clientIds[0],
+        admin.lastInsertRowid,
+        "Review preferred check-in format.",
+      );
+
+    const addSetting = sqlite.prepare(
+      "INSERT INTO practice_settings (key, value) VALUES (?, ?)",
+    );
+    addSetting.run("buffer_min", "0");
+    addSetting.run("default_couples_duration", "60");
+    addSetting.run("default_individual_duration", "50");
+    addSetting.run("default_child_teen_duration", "50");
+    addSetting.run("default_christian_counseling_duration", "50");
   });
   seed();
 }
+
+sqlite.exec(`
+  INSERT OR IGNORE INTO practice_settings (key, value) VALUES
+    ('buffer_min', '0'),
+    ('default_couples_duration', '60'),
+    ('default_individual_duration', '50'),
+    ('default_child_teen_duration', '50'),
+    ('default_christian_counseling_duration', '50');
+`);
 
 export type DbUser = {
   id: number;
@@ -226,10 +267,7 @@ export type DbAppointment = {
   start_time: string;
   end_time: string;
   service_type:
-    | "couples"
-    | "individual"
-    | "child_teen"
-    | "christian_counseling";
+    "couples" | "individual" | "child_teen" | "christian_counseling";
   duration_min: number;
   status: "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
   notes: string | null;
