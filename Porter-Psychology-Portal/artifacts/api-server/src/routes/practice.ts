@@ -505,10 +505,16 @@ router.get("/admin/summary", adminOnly, (_request, response) => {
 });
 
 router.get("/admin/calendar", adminOnly, (request, response) => {
-  const input = GetAdminCalendarQueryParams.parse(request.query);
-  const start = input.start ?? new Date().toISOString();
+  const input = GetAdminCalendarQueryParams.parse({
+    start: request.query.start
+      ? new Date(String(request.query.start))
+      : undefined,
+    end: request.query.end ? new Date(String(request.query.end)) : undefined,
+  });
+  const start = input.start?.toISOString() ?? new Date().toISOString();
   const end =
-    input.end ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    input.end?.toISOString() ??
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const appointments = appointmentList(
     "WHERE a.start_time < ? AND a.end_time > ?",
     [end, start],
@@ -526,7 +532,16 @@ router.get("/admin/calendar", adminOnly, (request, response) => {
 });
 
 router.get("/admin/appointments", adminOnly, (request, response) => {
-  const input = GetAdminAppointmentsQueryParams.parse(request.query);
+  const input = GetAdminAppointmentsQueryParams.parse({
+    ...request.query,
+    clientId: request.query.clientId
+      ? Number(request.query.clientId)
+      : undefined,
+    start: request.query.start
+      ? new Date(String(request.query.start))
+      : undefined,
+    end: request.query.end ? new Date(String(request.query.end)) : undefined,
+  });
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (input.status) {
@@ -539,11 +554,11 @@ router.get("/admin/appointments", adminOnly, (request, response) => {
   }
   if (input.start) {
     clauses.push("a.start_time >= ?");
-    params.push(input.start);
+    params.push(input.start.toISOString());
   }
   if (input.end) {
     clauses.push("a.start_time < ?");
-    params.push(input.end);
+    params.push(input.end.toISOString());
   }
   response.json(
     asAppointments(
