@@ -1,4 +1,4 @@
 #!/bin/bash
 set -e
 pnpm install --frozen-lockfile
-pnpm --filter db push
+# SQLite schema initialization and seed data run automatically with the API.
