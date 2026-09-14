@@ -41,7 +41,8 @@ app.use(
     if (
       error &&
       typeof error === "object" &&
-      error.constructor.name === "ZodError" &&
+      "name" in error &&
+      error.name === "ZodError" &&
       "issues" in error &&
       Array.isArray(error.issues)
     ) {
