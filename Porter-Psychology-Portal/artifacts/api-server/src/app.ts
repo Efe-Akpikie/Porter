@@ -3,7 +3,6 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { ZodError } from "zod";
 
 const app: Express = express();
 
@@ -39,10 +38,21 @@ app.use(
     response: express.Response,
     _next: express.NextFunction,
   ) => {
-    if (error instanceof ZodError) {
+    if (
+      error &&
+      typeof error === "object" &&
+      error.constructor.name === "ZodError" &&
+      "issues" in error &&
+      Array.isArray(error.issues)
+    ) {
       response.status(400).json({
         error: "Invalid request",
-        issues: error.issues.map(({ path, message }) => ({ path, message })),
+        issues: error.issues.map(
+          (issue: { path?: unknown; message?: unknown }) => ({
+            path: issue.path,
+            message: issue.message,
+          }),
+        ),
       });
       return;
     }
