@@ -1,0 +1,689 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API for Porter Psychology virtual practice scheduling and client care.
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: auth
+  - name: public
+  - name: client
+  - name: admin
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Sign in with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Invalid credentials
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: End the current session
+      responses:
+        "204":
+          description: Session ended
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Get the current session user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Not authenticated
+  /public/slots:
+    get:
+      operationId: getPublicSlots
+      tags: [public]
+      summary: List available appointment slots for a date
+      parameters:
+        - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/DurationParam"
+      responses:
+        "200":
+          description: Available slots grouped by time of day
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlotGroups"
+  /client/dashboard:
+    get:
+      operationId: getClientDashboard
+      tags: [client]
+      summary: Get the signed-in client's dashboard
+      responses:
+        "200":
+          description: Client dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientDashboard"
+  /client/profile:
+    get:
+      operationId: getClientProfile
+      tags: [client]
+      summary: Get the signed-in client's profile
+      responses:
+        "200":
+          description: Client profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+    patch:
+      operationId: updateClientProfile
+      tags: [client]
+      summary: Update the signed-in client's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+  /client/appointments:
+    get:
+      operationId: getClientAppointments
+      tags: [client]
+      summary: List the client's appointments
+      responses:
+        "200":
+          description: Client appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+  /client/appointments/{id}/cancel:
+    post:
+      operationId: cancelClientAppointment
+      tags: [client]
+      summary: Cancel one of the client's appointments
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Cancelled appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+  /client/waitlist:
+    post:
+      operationId: createWaitlistEntry
+      tags: [client]
+      summary: Join the waitlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WaitlistInput"
+      responses:
+        "201":
+          description: Waitlist entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WaitlistEntry"
+  /appointments:
+    post:
+      operationId: createAppointment
+      tags: [client, admin]
+      summary: Create an appointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentInput"
+      responses:
+        "201":
+          description: Created appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "409":
+          description: Slot is no longer available
+  /admin/summary:
+    get:
+      operationId: getAdminSummary
+      tags: [admin]
+      summary: Get the admin dashboard summary
+      responses:
+        "200":
+          description: Summary metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSummary"
+  /admin/calendar:
+    get:
+      operationId: getAdminCalendar
+      tags: [admin]
+      summary: List appointments and blocked times for a calendar range
+      parameters:
+        - $ref: "#/components/parameters/StartParam"
+        - $ref: "#/components/parameters/EndParam"
+      responses:
+        "200":
+          description: Calendar events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarData"
+  /admin/appointments:
+    get:
+      operationId: getAdminAppointments
+      tags: [admin]
+      summary: List appointments for management
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/AppointmentStatus"
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/StartParam"
+        - $ref: "#/components/parameters/EndParam"
+      responses:
+        "200":
+          description: Appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+  /admin/appointments/{id}:
+    patch:
+      operationId: updateAdminAppointment
+      tags: [admin]
+      summary: Update an appointment
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentUpdate"
+      responses:
+        "200":
+          description: Updated appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+  /admin/clients:
+    get:
+      operationId: getAdminClients
+      tags: [admin]
+      summary: List clients
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, newest, appointments]
+      responses:
+        "200":
+          description: Clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClientSummary"
+  /admin/clients/{id}:
+    get:
+      operationId: getAdminClient
+      tags: [admin]
+      summary: Get client details and history
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Client detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientDetail"
+  /admin/clients/{id}/notes:
+    post:
+      operationId: createClientNote
+      tags: [admin]
+      summary: Add a private client note
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientNoteInput"
+      responses:
+        "201":
+          description: Private note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientNote"
+  /admin/waitlist:
+    get:
+      operationId: getAdminWaitlist
+      tags: [admin]
+      summary: List waitlist entries
+      responses:
+        "200":
+          description: Waitlist
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WaitlistEntry"
+  /admin/waitlist/{id}/convert:
+    post:
+      operationId: convertWaitlistEntry
+      tags: [admin]
+      summary: Convert a waitlist entry into an appointment
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentInput"
+      responses:
+        "201":
+          description: Created appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+  /admin/availability:
+    get:
+      operationId: getAvailability
+      tags: [admin]
+      summary: Get weekly availability settings
+      responses:
+        "200":
+          description: Weekly availability
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Availability"
+    patch:
+      operationId: updateAvailability
+      tags: [admin]
+      summary: Replace weekly availability settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/AvailabilityInput"
+      responses:
+        "200":
+          description: Updated weekly availability
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Availability"
+  /admin/blocked-times:
+    get:
+      operationId: getBlockedTimes
+      tags: [admin]
+      summary: List blocked time ranges
+      responses:
+        "200":
+          description: Blocked times
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlockedTime"
+    post:
+      operationId: createBlockedTime
+      tags: [admin]
+      summary: Block a time range
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockedTimeInput"
+      responses:
+        "201":
+          description: Blocked time
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedTime"
+  /admin/blocked-times/{id}:
+    delete:
+      operationId: deleteBlockedTime
+      tags: [admin]
+      summary: Remove a blocked time range
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Removed
+components:
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    DateParam:
+      name: date
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+    DurationParam:
+      name: duration
+      in: query
+      required: true
+      schema:
+        type: integer
+        enum: [30, 45, 50, 60, 80, 90, 120]
+    StartParam:
+      name: start
+      in: query
+      schema:
+        type: string
+        format: date-time
+    EndParam:
+      name: end
+      in: query
+      schema:
+        type: string
+        format: date-time
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+    UserRole:
+      type: string
+      enum: [client, admin]
+    AppointmentStatus:
+      type: string
+      enum: [pending, confirmed, completed, cancelled, no_show]
+    ServiceType:
+      type: string
+      enum: [couples, individual, child_teen, christian_counseling]
+    TimeWindow:
+      type: string
+      enum: [morning, afternoon, evening]
+    AuthUser:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+        timezone: { type: string }
+      required: [id, email, name, role, timezone]
+    LoginInput:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+      required: [email, password]
+    UserProfile:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        name: { type: string }
+        phone: { type: ["string", "null"] }
+        timezone: { type: string }
+        notes: { type: ["string", "null"] }
+      required: [id, email, name, phone, timezone, notes]
+    ProfileUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        phone: { type: ["string", "null"] }
+        timezone: { type: string }
+        notes: { type: ["string", "null"] }
+    Appointment:
+      type: object
+      properties:
+        id: { type: integer }
+        clientId: { type: integer }
+        clientName: { type: string }
+        clientEmail: { type: string, format: email }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        serviceType: { $ref: "#/components/schemas/ServiceType" }
+        durationMin: { type: integer }
+        status: { $ref: "#/components/schemas/AppointmentStatus" }
+        notes: { type: ["string", "null"] }
+      required: [id, clientId, clientName, clientEmail, startTime, endTime, serviceType, durationMin, status, notes]
+    AppointmentInput:
+      type: object
+      properties:
+        clientId: { type: integer }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        serviceType: { $ref: "#/components/schemas/ServiceType" }
+        durationMin: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+        notes: { type: ["string", "null"] }
+      required: [clientId, startTime, endTime, serviceType, durationMin]
+    AppointmentUpdate:
+      type: object
+      properties:
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        status: { $ref: "#/components/schemas/AppointmentStatus" }
+        notes: { type: ["string", "null"] }
+        serviceType: { $ref: "#/components/schemas/ServiceType" }
+        durationMin: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+    Slot:
+      type: object
+      properties:
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        label: { type: string }
+      required: [startTime, endTime, label]
+    SlotGroups:
+      type: object
+      properties:
+        timezone: { type: string }
+        morning:
+          type: array
+          items: { $ref: "#/components/schemas/Slot" }
+        afternoon:
+          type: array
+          items: { $ref: "#/components/schemas/Slot" }
+        evening:
+          type: array
+          items: { $ref: "#/components/schemas/Slot" }
+      required: [timezone, morning, afternoon, evening]
+    ClientDashboard:
+      type: object
+      properties:
+        upcoming:
+          type: array
+          items: { $ref: "#/components/schemas/Appointment" }
+        past:
+          type: array
+          items: { $ref: "#/components/schemas/Appointment" }
+        waitlist:
+          type: array
+          items: { $ref: "#/components/schemas/WaitlistEntry" }
+      required: [upcoming, past, waitlist]
+    WaitlistInput:
+      type: object
+      properties:
+        serviceType: { $ref: "#/components/schemas/ServiceType" }
+        preferredDay: { type: integer, minimum: 0, maximum: 6 }
+        preferredTimeWindow: { $ref: "#/components/schemas/TimeWindow" }
+      required: [serviceType, preferredDay, preferredTimeWindow]
+    WaitlistEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        clientId: { type: integer }
+        clientName: { type: string }
+        serviceType: { $ref: "#/components/schemas/ServiceType" }
+        preferredDay: { type: integer }
+        preferredTimeWindow: { $ref: "#/components/schemas/TimeWindow" }
+        status:
+          type: string
+          enum: [waiting, offered, converted, expired, slot_available]
+        createdAt: { type: string, format: date-time }
+      required: [id, clientId, clientName, serviceType, preferredDay, preferredTimeWindow, status, createdAt]
+    AdminSummary:
+      type: object
+      properties:
+        todayCount: { type: integer }
+        weekCount: { type: integer }
+        pendingWaitlist: { type: integer }
+        nextAppointment: { $ref: "#/components/schemas/Appointment" }
+      required: [todayCount, weekCount, pendingWaitlist]
+    CalendarData:
+      type: object
+      properties:
+        timezone: { type: string }
+        appointments:
+          type: array
+          items: { $ref: "#/components/schemas/Appointment" }
+        blockedTimes:
+          type: array
+          items: { $ref: "#/components/schemas/BlockedTime" }
+      required: [timezone, appointments, blockedTimes]
+    ClientSummary:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: ["string", "null"] }
+        appointmentCount: { type: integer }
+        lastAppointment: { type: ["string", "null"], format: date-time }
+      required: [id, name, email, phone, appointmentCount, lastAppointment]
+    ClientDetail:
+      type: object
+      properties:
+        profile: { $ref: "#/components/schemas/UserProfile" }
+        appointments:
+          type: array
+          items: { $ref: "#/components/schemas/Appointment" }
+        notes:
+          type: array
+          items: { $ref: "#/components/schemas/ClientNote" }
+      required: [profile, appointments, notes]
+    ClientNoteInput:
+      type: object
+      properties:
+        content: { type: string, minLength: 1 }
+      required: [content]
+    ClientNote:
+      type: object
+      properties:
+        id: { type: integer }
+        clientId: { type: integer }
+        adminId: { type: integer }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, clientId, adminId, content, createdAt]
+    AvailabilityInput:
+      type: object
+      properties:
+        dayOfWeek: { type: integer, minimum: 0, maximum: 6 }
+        startTime: { type: string, pattern: "^\\d{2}:\\d{2}$" }
+        endTime: { type: string, pattern: "^\\d{2}:\\d{2}$" }
+        isActive: { type: boolean }
+      required: [dayOfWeek, startTime, endTime, isActive]
+    Availability:
+      allOf:
+        - $ref: "#/components/schemas/AvailabilityInput"
+        - type: object
+          properties:
+            id: { type: integer }
+          required: [id]
+    BlockedTimeInput:
+      type: object
+      properties:
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        reason: { type: string, minLength: 1 }
+      required: [startTime, endTime, reason]
+    BlockedTime:
+      allOf:
+        - $ref: "#/components/schemas/BlockedTimeInput"
+        - type: object
+          properties:
+            id: { type: integer }
+            createdAt: { type: string, format: date-time }
+          required: [id, createdAt]
