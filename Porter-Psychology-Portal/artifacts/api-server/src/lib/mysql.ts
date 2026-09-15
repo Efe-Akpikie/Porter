@@ -304,9 +304,16 @@ async function ensureBootstrapAdmin(connection: PoolConnection) {
 
   if (!email && !password) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error(
-        "ADMIN_EMAIL and ADMIN_PASSWORD are required for the initial production administrator.",
+      const admin = await one<RowDataPacket & { id: number }>(
+        "SELECT id FROM users WHERE role = 'admin' LIMIT 1",
+        [],
+        connection,
       );
+      if (!admin) {
+        throw new Error(
+          "ADMIN_EMAIL and ADMIN_PASSWORD are required for the initial production administrator.",
+        );
+      }
     }
     return;
   }
