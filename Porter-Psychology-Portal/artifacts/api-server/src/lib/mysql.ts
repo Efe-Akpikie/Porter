@@ -297,6 +297,48 @@ async function seedDemoData(connection: PoolConnection) {
   );
 }
 
+async function ensureBootstrapAdmin(connection: PoolConnection) {
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD;
+  const name = process.env.ADMIN_NAME?.trim() || "Lara Akinpelu";
+
+  if (!email && !password) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "ADMIN_EMAIL and ADMIN_PASSWORD are required for the initial production administrator.",
+      );
+    }
+    return;
+  }
+  if (!email || !password) {
+    throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be set together.");
+  }
+  if (password.length < 12) {
+    throw new Error("ADMIN_PASSWORD must contain at least 12 characters.");
+  }
+
+  const existing = await one<RowDataPacket & { role: string }>(
+    "SELECT role FROM users WHERE email = ?",
+    [email],
+    connection,
+  );
+  if (existing) {
+    if (existing.role !== "admin") {
+      throw new Error(
+        `ADMIN_EMAIL ${email} belongs to a client account and cannot be bootstrapped as an administrator.`,
+      );
+    }
+    return;
+  }
+
+  await execute(
+    `INSERT INTO users (email, password_hash, role, name, timezone)
+     VALUES (?, ?, 'admin', ?, ?)`,
+    [email, await bcrypt.hash(password, 12), name, ADMIN_TIMEZONE],
+    connection,
+  );
+}
+
 export async function initializeDatabase() {
   const connection = await pool.getConnection();
   let lockHeld = false;
@@ -322,6 +364,7 @@ export async function initializeDatabase() {
         connection,
       );
     }
+    await ensureBootstrapAdmin(connection);
 
     // Weekly availability is operational configuration, not demo identity/data.
     // Initialize it only for a brand-new empty calendar and never overwrite edits.

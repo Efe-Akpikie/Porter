@@ -82,6 +82,7 @@ import {
   useHealthCheck,
   useLogin,
   useLogout,
+  useRegister,
   useUpdateAdminAppointment,
   useUpdateAdminSettings,
   useUpdateAvailability,
@@ -741,6 +742,15 @@ function Login() {
               {login.isPending ? "Signing you in…" : "Continue securely"}
             </Button>
           </form>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            New client?{" "}
+            <Link
+              href="/register"
+              className="font-semibold text-primary hover:underline"
+            >
+              Create your account
+            </Link>
+          </p>
           <Link
             href="/"
             className="mt-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
@@ -749,6 +759,137 @@ function Login() {
             <ArrowLeft size={15} /> Return to Porter Psychology
           </Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Register() {
+  const [, setLocation] = useLocation();
+  const register = useRegister();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const passwordsMatch = password === confirmation;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!passwordsMatch) return;
+    register.mutate(
+      {
+        data: {
+          name,
+          email,
+          password,
+          phone: phone.trim() || undefined,
+          timezone:
+            Intl.DateTimeFormat().resolvedOptions().timeZone ||
+            "America/Vancouver",
+        },
+      },
+      {
+        onSuccess: (user) => {
+          queryClient.setQueryData(getGetCurrentUserQueryKey(), user);
+          setLocation("/client");
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="texture flex min-h-[100dvh] items-center justify-center px-5 py-10">
+      <div className="w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-10">
+        <Logo />
+        <p className="mono mt-10 text-[11px] uppercase tracking-[.22em] text-secondary">
+          Client registration
+        </p>
+        <h1 className="display mt-3 text-4xl">Create your care space.</h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          Create an account to view availability and book virtual sessions.
+        </p>
+        <form className="mt-8 grid gap-5 sm:grid-cols-2" onSubmit={submit}>
+          <label className="block text-sm font-semibold sm:col-span-2">
+            Full name
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              autoComplete="name"
+              className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block text-sm font-semibold sm:col-span-2">
+            Email
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              required
+              autoComplete="email"
+              className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block text-sm font-semibold sm:col-span-2">
+            Phone <span className="font-normal text-muted-foreground">(optional)</span>
+            <input
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              type="tel"
+              autoComplete="tel"
+              className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block text-sm font-semibold">
+            Password
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              minLength={8}
+              required
+              autoComplete="new-password"
+              className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block text-sm font-semibold">
+            Confirm password
+            <input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              type="password"
+              minLength={8}
+              required
+              autoComplete="new-password"
+              className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+            />
+          </label>
+          {!passwordsMatch && confirmation && (
+            <p className="text-sm text-destructive sm:col-span-2">
+              Passwords do not match.
+            </p>
+          )}
+          {register.isError && (
+            <p className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">
+              {register.error.message.includes("already exists")
+                ? "An account with that email already exists."
+                : "We could not create your account. Please review your details and try again."}
+            </p>
+          )}
+          <Button
+            className="sm:col-span-2"
+            disabled={register.isPending || !passwordsMatch}
+          >
+            {register.isPending ? "Creating account…" : "Create account"}
+          </Button>
+        </form>
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <Link href="/login" className="font-semibold text-primary hover:underline">
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   );
@@ -3372,6 +3513,7 @@ function Router() {
       <Switch>
         <Route path="/" component={Landing} />
         <Route path="/login" component={Login} />
+        <Route path="/register" component={Register} />
         <Route
           path="/client/book"
           component={() => (

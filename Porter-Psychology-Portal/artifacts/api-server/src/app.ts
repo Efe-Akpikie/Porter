@@ -1,3 +1,5 @@
+import path from "node:path";
+import { existsSync } from "node:fs";
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -29,11 +31,39 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || undefined,
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+if (process.env.NODE_ENV === "production") {
+  const publicDirectory = path.resolve(
+    process.cwd(),
+    "artifacts/porter-psychology/dist/public",
+  );
+  const indexFile = path.join(publicDirectory, "index.html");
+
+  if (!existsSync(indexFile)) {
+    throw new Error(
+      `Frontend build was not found at ${indexFile}. Run the workspace build before starting the server.`,
+    );
+  }
+
+  app.use(express.static(publicDirectory, { index: false, maxAge: "1h" }));
+  app.use((request, response, next) => {
+    if (request.method === "GET" && request.accepts("html")) {
+      response.sendFile(indexFile);
+      return;
+    }
+    next();
+  });
+}
 
 app.use(
   (

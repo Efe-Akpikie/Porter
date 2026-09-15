@@ -1,117 +1,138 @@
 # Porter Psychology
 
-A full-stack template for Lara Akinpelu's solo virtual psychology practice. It includes a public marketing site, client self-booking portal, and practitioner workspace for calendar, client, waitlist, availability, and blocked-time management.
+A full-stack scheduling application for Lara Akinpelu's virtual psychology
+practice. It includes a public site, client registration and self-booking, and
+an administrator portal for calendar, clients, appointments, waitlist,
+availability, and blocked-time management.
 
-## Demo accounts
+## Stack
 
-| Role         | Email                        | Password    |
-| ------------ | ---------------------------- | ----------- |
-| Practitioner | `admin@porterpsychology.com` | `admin123`  |
-| Client       | `maya.chen@example.com`      | `client123` |
+- React 19, TypeScript, Vite, and Tailwind CSS
+- Express 5
+- Aiven MySQL through `mysql2`
+- HttpOnly cookie sessions and bcrypt password hashing
+- OpenAPI-generated Zod validators and React Query hooks
+- FullCalendar
 
-The other seeded clients also use `client123`. These credentials and all seeded client records are demonstration data. Change or remove them before handling real client information.
+The production Express service serves both `/api/*` and the compiled React SPA,
+so Render only needs one web service.
 
-## Run on Replit
+## Local development
 
-The repository is configured as a pnpm workspace with separate web and API Replit artifacts. Use the **Project** Run button to start both services. Replit routes `/` to the React app and `/api` to the Express server.
-
-Local development:
+Requirements: Node.js 22, pnpm 10, and a reachable MySQL 8 database.
 
 ```bash
 pnpm install --frozen-lockfile
+cp .env.example .env
+```
+
+Export the values from `.env` in your shell, then run the API and web app in
+separate terminals:
+
+```bash
 pnpm --filter @workspace/api-server run dev
 pnpm --filter @workspace/porter-psychology run dev
 ```
+
+The Vite app defaults to `http://localhost:22912` and proxies `/api` to
+`http://127.0.0.1:8080`.
 
 Useful checks:
 
 ```bash
 pnpm run typecheck
 pnpm run build
-pnpm --filter @workspace/api-spec run codegen
 ```
 
-## Architecture
+To test the compiled single-service production build:
 
-- React 19, TypeScript, Vite, Tailwind CSS
-- Express 5 API
-- SQLite through `better-sqlite3`
-- HttpOnly cookie sessions with bcrypt password hashing
-- OpenAPI-generated Zod validators and React Query hooks
-- FullCalendar day, week, and month calendar
-
-The SQLite schema, lightweight migrations, and seed routine are in:
-
-```text
-artifacts/api-server/src/lib/sqlite.ts
+```bash
+NODE_ENV=production PORT=8080 pnpm run start
 ```
-
-Appointment and blocked-time timestamps are stored as UTC ISO strings. Availability is entered in the practitioner timezone and converted at the API boundary.
 
 ## Environment variables
 
-| Variable         | Default                         | Purpose                                                            |
-| ---------------- | ------------------------------- | ------------------------------------------------------------------ |
-| `SQLITE_PATH`    | `data/porter-psychology.sqlite` | SQLite database file                                               |
-| `ADMIN_TIMEZONE` | `America/Vancouver`             | IANA timezone used for availability, booking, and calendar display |
-| `PORT`           | Set by Replit                   | API or Vite service port                                           |
-| `BASE_PATH`      | Set by Replit                   | Vite application base path                                         |
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | Aiven MySQL URL: `mysql://user:encoded-password@host:port/database` |
+| `MYSQL_CA_CERT` | Aiven | Aiven CA certificate, including PEM header/footer; escaped `\n` is accepted |
+| `ADMIN_EMAIL` | Production | Creates the initial administrator if that email does not exist |
+| `ADMIN_PASSWORD` | Production | Initial administrator password (minimum 12 characters) |
+| `ADMIN_NAME` | No | Administrator name; defaults to `Lara Akinpelu` |
+| `ADMIN_TIMEZONE` | No | Practice IANA timezone; defaults to `America/Vancouver` |
+| `DB_CONNECTION_LIMIT` | No | MySQL pool size; defaults to `5` |
+| `PORT` | Runtime | HTTP port; Render supplies this |
+| `NODE_ENV` | Production | Set to `production` on Render |
+| `CORS_ORIGIN` | No | Explicit cross-origin frontend URL; unnecessary for the single-service deployment |
+| `SEED_DEMO_DATA` | Development only | Set to `true` to seed demo accounts; ignored in production |
 
-Set `ADMIN_TIMEZONE` to Lara's confirmed local IANA timezone before launch.
+The bootstrap variables never overwrite an existing administrator or reset its
+password. After the first successful startup, manage that account in the
+database or application rather than treating `ADMIN_PASSWORD` as a reset
+mechanism.
 
-## Reset and reseed the database
+## Aiven setup
 
-Stop the API server, remove the SQLite file, and restart:
+1. Create a MySQL service and database.
+2. Copy its host, port, database, username, password, and CA certificate.
+3. URL-encode the username/password when constructing `DATABASE_URL` (special
+   characters such as `@`, `:`, `/`, and `#` cannot be pasted raw).
+4. Keep Aiven's required TLS/IP access enabled for Render.
 
-```bash
-rm -f data/porter-psychology.sqlite
-```
+The API initializes tables and default availability idempotently at startup.
+Scheduling writes use a MySQL advisory lock and transactions to prevent two
+users from taking the same slot.
 
-On startup, the API recreates the schema and seeds:
+## Render deployment
 
-- Lara's admin account
-- Four fictional clients
-- Four sample appointments in the current week
-- Monday–Friday, 09:00–17:00 availability
-- Two waitlist entries
-- Default service durations and zero-minute buffer
+The repository-root `render.yaml` defines the free Node web service.
 
-If `SQLITE_PATH` is configured, remove that file instead.
+1. In Render, create a Blueprint from this GitHub repository.
+2. Enter the secret values requested by the Blueprint:
+   `DATABASE_URL`, `MYSQL_CA_CERT`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD`.
+3. Confirm `ADMIN_TIMEZONE` before deploying.
+4. Deploy and verify `/api/healthz`, client registration, client booking, and
+   administrator sign-in.
 
-## Placeholder content
+Render's free web service sleeps when idle, so the first request after inactivity
+can be slow. Moving to a paid Render instance or paid Aiven plan does not require
+code changes; update the service plan/connection secret and redeploy.
 
-Search `artifacts/porter-psychology/src/App.tsx` for these exact strings:
+## Database and demo data
 
-- `[Insert tagline]`
-- `[Insert extended bio]`
-- `[Placeholder — replace with headshot]`
-- `[Insert service description for X]`
+All appointment and blocked-time timestamps are stored in UTC. Availability is
+entered in the practitioner timezone and converted at the API boundary.
 
-Replace them only with approved practice copy and Lara's headshot. The app intentionally contains no testimonials, awards, or credentials beyond those supplied for this template.
+Demo data is opt-in and categorically disabled when `NODE_ENV=production`.
+For local demo data, set `SEED_DEMO_DATA=true` before the first startup. This
+creates:
 
-## Notification stubs
+- `admin@porterpsychology.com` / `admin123`
+- `maya.chen@example.com` / `client123`
 
-No email, SMS, or push delivery is implemented. The intentional stubs are in:
+Do not use those records for real users.
 
-```text
-artifacts/api-server/src/routes/practice.ts
-```
+## Placeholder content and notifications
 
-Search for:
+Search `artifacts/porter-psychology/src/App.tsx` for `[Insert` and
+`[Placeholder` to locate copy and image placeholders.
 
-```text
-// TODO: integrate email service for booking confirmation.
-// TODO: integrate email service for cancellation and waitlist availability.
-```
+Email, SMS, push delivery, and automatic video meeting creation are not
+implemented. Booking and cancellation still update the database, and the
+intentional integration stubs are marked with `TODO` comments in
+`artifacts/api-server/src/routes/practice-mysql.ts`.
 
-Cancellation still updates the matching waitlist entry's database status to `slot_available`; it does not contact the client.
+## Production limitations
 
-## Before production use
+This is a functional scheduling MVP, not a complete clinical-record system.
+Before storing real client or health information:
 
-This is a scheduling and portal template, not a complete clinical-record system. Before storing real client or health information:
+- replace all placeholder copy and confirm Lara's credentials/timezone;
+- add approved privacy, consent, cancellation, and terms content;
+- establish access, retention, audit, backup, and breach-response procedures;
+- verify whether the selected Render and Aiven plans provide the agreements and
+  controls required by the practice's jurisdiction;
+- complete legal, privacy, and security review.
 
-- replace demo credentials and seed records;
-- confirm the practitioner timezone and approved site copy;
-- review privacy, consent, retention, audit, backup, and breach-response requirements;
-- configure HTTPS, secure cookies, secrets, monitoring, and encrypted backups;
-- complete a legal and security review for the jurisdictions where the practice operates.
+Using TLS and a hosted database does not by itself make the application
+HIPAA/PIPEDA compliant.

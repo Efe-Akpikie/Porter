@@ -492,6 +492,7 @@ router.post(
       response.status(404).json({ error: "Appointment not found" });
       return;
     }
+    // TODO: integrate email/SMS service for cancellation and waitlist availability.
     response.json(appointmentResponse(appointment));
   },
 );
@@ -566,6 +567,7 @@ router.post("/appointments", requireAuth, async (request, response) => {
       );
       return getAppointment(result.insertId, connection);
     });
+    // TODO: integrate email/SMS service for client and practitioner booking confirmation.
     response.status(201).json(appointmentResponse(appointment!));
   } catch (error) {
     if (error instanceof CalendarConflictError) {
