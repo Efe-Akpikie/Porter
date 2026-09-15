@@ -46,6 +46,28 @@ paths:
                 $ref: "#/components/schemas/AuthUser"
         "401":
           description: Invalid credentials
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Create a client account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Registered and authenticated client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "409":
+          description: Email already registered
+        "429":
+          description: Too many registration attempts
   /auth/logout:
     post:
       operationId: logout
@@ -577,6 +599,15 @@ components:
         email: { type: string, format: email }
         password: { type: string, minLength: 1 }
       required: [email, password]
+    RegisterInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, minLength: 8, maxLength: 128 }
+        phone: { type: string, maxLength: 50 }
+        timezone: { type: string, minLength: 1, maxLength: 100 }
+      required: [name, email, password]
     UserProfile:
       type: object
       properties:

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
-import { sqlite, getUserById, type DbUser } from "./sqlite";
+import { execute, getUserById, one, type DbUser } from "./mysql";
 
 const SESSION_COOKIE = "porter_session";
 const SESSION_LENGTH_MS = 1000 * 60 * 60 * 24 * 14;
@@ -16,51 +16,80 @@ function readCookie(request: Request, name: string) {
   return entry ? decodeURIComponent(entry.slice(name.length + 1)) : undefined;
 }
 
-export function createSession(userId: number, response: Response) {
+function cookieAttributes(maxAge: number) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `HttpOnly; Path=/; SameSite=Lax${secure}; Max-Age=${maxAge}`;
+}
+
+async function cleanExpiredSessions() {
+  // Keep normal requests cheap while ensuring stale sessions are regularly removed.
+  if (Math.random() < 0.01) {
+    try {
+      await execute(
+        "DELETE FROM sessions WHERE expires_at <= UTC_TIMESTAMP(3)",
+      );
+    } catch {
+      // Cleanup is best-effort and must not fail an otherwise valid request.
+    }
+  }
+}
+
+export async function createSession(userId: number, response: Response) {
   const token = randomUUID();
   const expiresAt = new Date(Date.now() + SESSION_LENGTH_MS).toISOString();
-  sqlite
-    .prepare(
-      "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-    )
-    .run(token, userId, expiresAt);
+  await execute(
+    "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+    [token, userId, expiresAt],
+  );
+  await cleanExpiredSessions();
   response.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_LENGTH_MS / 1000}`,
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; ${cookieAttributes(SESSION_LENGTH_MS / 1000)}`,
   );
 }
 
-export function clearSession(request: Request, response: Response) {
+export async function clearSession(request: Request, response: Response) {
   const token = readCookie(request, SESSION_COOKIE);
-  if (token) sqlite.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+  if (token) await execute("DELETE FROM sessions WHERE token = ?", [token]);
   response.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`,
+    `${SESSION_COOKIE}=; ${cookieAttributes(0)}`,
   );
 }
 
-export function attachUser(request: AuthenticatedRequest) {
+export async function attachUser(request: AuthenticatedRequest) {
+  if (request.user) return request.user;
   const token = readCookie(request, SESSION_COOKIE);
   if (!token) return undefined;
-  const session = sqlite
-    .prepare(
-      "SELECT user_id, expires_at FROM sessions WHERE token = ? AND expires_at > ?",
-    )
-    .get(token, new Date().toISOString()) as
-    | { user_id: number; expires_at: string }
-    | undefined;
-  if (!session) return undefined;
-  const user = getUserById(session.user_id);
+  const session = await one<
+    { user_id: number } & import("mysql2").RowDataPacket
+  >(
+    "SELECT user_id FROM sessions WHERE token = ? AND expires_at > UTC_TIMESTAMP(3)",
+    [token],
+  );
+  if (!session) {
+    try {
+      await execute(
+        "DELETE FROM sessions WHERE token = ? AND expires_at <= UTC_TIMESTAMP(3)",
+        [token],
+      );
+    } catch {
+      // Treat an absent/expired session as unauthenticated even if cleanup fails.
+    }
+    return undefined;
+  }
+  const user = await getUserById(session.user_id);
   request.user = user;
+  await cleanExpiredSessions();
   return user;
 }
 
-export function requireAuth(
+export async function requireAuth(
   request: AuthenticatedRequest,
   response: Response,
   next: NextFunction,
 ) {
-  if (!attachUser(request)) {
+  if (!(await attachUser(request))) {
     response.status(401).json({ error: "Authentication required" });
     return;
   }
@@ -68,14 +97,16 @@ export function requireAuth(
 }
 
 export function requireRole(role: "admin" | "client") {
-  return (
+  return async (
     request: AuthenticatedRequest,
     response: Response,
     next: NextFunction,
   ) => {
-    attachUser(request);
+    await attachUser(request);
     if (!request.user || request.user.role !== role) {
-      response.status(403).json({ error: "You do not have access to this area" });
+      response
+        .status(403)
+        .json({ error: "You do not have access to this area" });
       return;
     }
     next();

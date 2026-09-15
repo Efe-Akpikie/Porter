@@ -61,6 +61,28 @@ export interface LoginInput {
   password: string;
 }
 
+export interface RegisterInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name: string;
+  /** @maxLength 320 */
+  email: string;
+  /**
+     * @minLength 8
+     * @maxLength 128
+     */
+  password: string;
+  /** @maxLength 50 */
+  phone?: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  timezone?: string;
+}
+
 export interface UserProfile {
   id: number;
   email: string;

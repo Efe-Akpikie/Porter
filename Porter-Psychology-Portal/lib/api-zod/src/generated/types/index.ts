@@ -44,6 +44,7 @@ export * from './practiceSettingsDefaultDurationsIndividual';
 export * from './profileUpdate';
 export * from './publicPractice';
 export * from './publicPracticeSettings';
+export * from './registerInput';
 export * from './serviceType';
 export * from './slot';
 export * from './slotGroups';

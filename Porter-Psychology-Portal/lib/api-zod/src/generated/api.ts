@@ -37,6 +37,39 @@ export const LoginResponse = zod.object({
 
 
 /**
+ * @summary Create a client account
+ */
+export const registerBodyNameMax = 255;
+
+export const registerBodyEmailMax = 320;
+
+export const registerBodyPasswordMin = 8;
+export const registerBodyPasswordMax = 128;
+
+export const registerBodyPhoneMax = 50;
+
+export const registerBodyTimezoneMax = 100;
+
+
+
+export const RegisterBody = zod.object({
+  "name": zod.string().min(1).max(registerBodyNameMax),
+  "email": zod.string().email().max(registerBodyEmailMax),
+  "password": zod.string().min(registerBodyPasswordMin).max(registerBodyPasswordMax),
+  "phone": zod.string().max(registerBodyPhoneMax).optional(),
+  "timezone": zod.string().min(1).max(registerBodyTimezoneMax).optional()
+})
+
+export const RegisterResponse = zod.object({
+  "id": zod.number().int(),
+  "email": zod.string().email(),
+  "name": zod.string(),
+  "role": zod.enum(['client', 'admin']),
+  "timezone": zod.string()
+})
+
+
+/**
  * @summary End the current session
  */
 export const LogoutResponse = zod.void()

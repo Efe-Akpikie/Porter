@@ -6,6 +6,10 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 app.use(
   pinoHttp({
     logger,
@@ -55,6 +59,42 @@ app.use(
           }),
         ),
       });
+      return;
+    }
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ER_DUP_ENTRY"
+    ) {
+      response
+        .status(409)
+        .json({ error: "A conflicting record already exists" });
+      return;
+    }
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      ["ER_NO_REFERENCED_ROW", "ER_NO_REFERENCED_ROW_2"].includes(
+        String(error.code),
+      )
+    ) {
+      response.status(400).json({ error: "A related record does not exist" });
+      return;
+    }
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      (error.code.startsWith("ER_") ||
+        ["ECONNREFUSED", "PROTOCOL_CONNECTION_LOST", "ETIMEDOUT"].includes(
+          error.code,
+        ))
+    ) {
+      logger.error({ error }, "Database request failed");
+      response.status(503).json({ error: "Database temporarily unavailable" });
       return;
     }
     logger.error({ error }, "Unhandled request error");
