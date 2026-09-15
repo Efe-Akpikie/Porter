@@ -61,6 +61,28 @@ export interface LoginInput {
   password: string;
 }
 
+export interface RegisterInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name: string;
+  /** @maxLength 320 */
+  email: string;
+  /**
+     * @minLength 8
+     * @maxLength 128
+     */
+  password: string;
+  /** @maxLength 50 */
+  phone?: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  timezone?: string;
+}
+
 export interface UserProfile {
   id: number;
   email: string;
@@ -142,6 +164,12 @@ export interface AppointmentUpdate {
   durationMin?: AppointmentUpdateDurationMin;
 }
 
+export interface BulkAppointmentUpdate {
+  /** @minItems 1 */
+  ids: number[];
+  status: AppointmentStatus;
+}
+
 export interface Slot {
   startTime: string;
   endTime: string;
@@ -153,6 +181,13 @@ export interface SlotGroups {
   morning: Slot[];
   afternoon: Slot[];
   evening: Slot[];
+}
+
+export type PublicPracticeSettings = {[key: string]: number};
+
+export interface PublicPractice {
+  timezone: string;
+  settings: PublicPracticeSettings;
 }
 
 export type WaitlistEntryStatus = typeof WaitlistEntryStatus[keyof typeof WaitlistEntryStatus];
@@ -264,6 +299,74 @@ export interface AvailabilityInput {
 export type Availability = AvailabilityInput & {
   id: number;
 };
+
+export type PracticeSettingsDefaultDurationsCouples = typeof PracticeSettingsDefaultDurationsCouples[keyof typeof PracticeSettingsDefaultDurationsCouples];
+
+
+export const PracticeSettingsDefaultDurationsCouples = {
+  NUMBER_30: 30,
+  NUMBER_45: 45,
+  NUMBER_50: 50,
+  NUMBER_60: 60,
+  NUMBER_80: 80,
+  NUMBER_90: 90,
+  NUMBER_120: 120,
+} as const;
+
+export type PracticeSettingsDefaultDurationsIndividual = typeof PracticeSettingsDefaultDurationsIndividual[keyof typeof PracticeSettingsDefaultDurationsIndividual];
+
+
+export const PracticeSettingsDefaultDurationsIndividual = {
+  NUMBER_30: 30,
+  NUMBER_45: 45,
+  NUMBER_50: 50,
+  NUMBER_60: 60,
+  NUMBER_80: 80,
+  NUMBER_90: 90,
+  NUMBER_120: 120,
+} as const;
+
+export type PracticeSettingsDefaultDurationsChildTeen = typeof PracticeSettingsDefaultDurationsChildTeen[keyof typeof PracticeSettingsDefaultDurationsChildTeen];
+
+
+export const PracticeSettingsDefaultDurationsChildTeen = {
+  NUMBER_30: 30,
+  NUMBER_45: 45,
+  NUMBER_50: 50,
+  NUMBER_60: 60,
+  NUMBER_80: 80,
+  NUMBER_90: 90,
+  NUMBER_120: 120,
+} as const;
+
+export type PracticeSettingsDefaultDurationsChristianCounseling = typeof PracticeSettingsDefaultDurationsChristianCounseling[keyof typeof PracticeSettingsDefaultDurationsChristianCounseling];
+
+
+export const PracticeSettingsDefaultDurationsChristianCounseling = {
+  NUMBER_30: 30,
+  NUMBER_45: 45,
+  NUMBER_50: 50,
+  NUMBER_60: 60,
+  NUMBER_80: 80,
+  NUMBER_90: 90,
+  NUMBER_120: 120,
+} as const;
+
+export type PracticeSettingsDefaultDurations = {
+  couples: PracticeSettingsDefaultDurationsCouples;
+  individual: PracticeSettingsDefaultDurationsIndividual;
+  child_teen: PracticeSettingsDefaultDurationsChildTeen;
+  christian_counseling: PracticeSettingsDefaultDurationsChristianCounseling;
+};
+
+export interface PracticeSettings {
+  /**
+     * @minimum 0
+     * @maximum 120
+     */
+  bufferMin: number;
+  defaultDurations: PracticeSettingsDefaultDurations;
+}
 
 export type DateParamParameter = string;
 

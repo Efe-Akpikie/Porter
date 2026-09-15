@@ -37,6 +37,39 @@ export const LoginResponse = zod.object({
 
 
 /**
+ * @summary Create a client account
+ */
+export const registerBodyNameMax = 255;
+
+export const registerBodyEmailMax = 320;
+
+export const registerBodyPasswordMin = 8;
+export const registerBodyPasswordMax = 128;
+
+export const registerBodyPhoneMax = 50;
+
+export const registerBodyTimezoneMax = 100;
+
+
+
+export const RegisterBody = zod.object({
+  "name": zod.string().min(1).max(registerBodyNameMax),
+  "email": zod.string().email().max(registerBodyEmailMax),
+  "password": zod.string().min(registerBodyPasswordMin).max(registerBodyPasswordMax),
+  "phone": zod.string().max(registerBodyPhoneMax).optional(),
+  "timezone": zod.string().min(1).max(registerBodyTimezoneMax).optional()
+})
+
+export const RegisterResponse = zod.object({
+  "id": zod.number().int(),
+  "email": zod.string().email(),
+  "name": zod.string(),
+  "role": zod.enum(['client', 'admin']),
+  "timezone": zod.string()
+})
+
+
+/**
  * @summary End the current session
  */
 export const LogoutResponse = zod.void()
@@ -79,6 +112,15 @@ export const GetPublicSlotsResponse = zod.object({
   "endTime": zod.coerce.date(),
   "label": zod.string()
 }))
+})
+
+
+/**
+ * @summary Get public practice timezone and booking settings
+ */
+export const GetPublicPracticeResponse = zod.object({
+  "timezone": zod.string(),
+  "settings": zod.record(zod.string(), zod.number())
 })
 
 
@@ -334,6 +376,32 @@ export const GetAdminAppointmentsResponse = zod.array(GetAdminAppointmentsRespon
 
 
 /**
+ * @summary Update the status of multiple appointments
+ */
+
+
+
+export const BulkUpdateAdminAppointmentsBody = zod.object({
+  "ids": zod.array(zod.number().int()).min(1),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show'])
+})
+
+export const BulkUpdateAdminAppointmentsResponseItem = zod.object({
+  "id": zod.number().int(),
+  "clientId": zod.number().int(),
+  "clientName": zod.string(),
+  "clientEmail": zod.string().email(),
+  "startTime": zod.coerce.date(),
+  "endTime": zod.coerce.date(),
+  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.number().int(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable()
+})
+export const BulkUpdateAdminAppointmentsResponse = zod.array(BulkUpdateAdminAppointmentsResponseItem)
+
+
+/**
  * @summary Update an appointment
  */
 export const UpdateAdminAppointmentParams = zod.object({
@@ -547,6 +615,59 @@ export const UpdateAvailabilityResponse = zod.array(UpdateAvailabilityResponseIt
 
 
 /**
+ * @summary Get session defaults and buffer time
+ */
+export const getAdminSettingsResponseBufferMinMin = 0;
+export const getAdminSettingsResponseBufferMinMax = 120;
+
+
+
+export const GetAdminSettingsResponse = zod.object({
+  "bufferMin": zod.number().int().min(getAdminSettingsResponseBufferMinMin).max(getAdminSettingsResponseBufferMinMax),
+  "defaultDurations": zod.object({
+  "couples": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "individual": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "child_teen": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "christian_counseling": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)])
+})
+})
+
+
+/**
+ * @summary Update session defaults and buffer time
+ */
+export const updateAdminSettingsBodyBufferMinMin = 0;
+export const updateAdminSettingsBodyBufferMinMax = 120;
+
+
+
+export const UpdateAdminSettingsBody = zod.object({
+  "bufferMin": zod.number().int().min(updateAdminSettingsBodyBufferMinMin).max(updateAdminSettingsBodyBufferMinMax),
+  "defaultDurations": zod.object({
+  "couples": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "individual": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "child_teen": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "christian_counseling": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)])
+})
+})
+
+export const updateAdminSettingsResponseBufferMinMin = 0;
+export const updateAdminSettingsResponseBufferMinMax = 120;
+
+
+
+export const UpdateAdminSettingsResponse = zod.object({
+  "bufferMin": zod.number().int().min(updateAdminSettingsResponseBufferMinMin).max(updateAdminSettingsResponseBufferMinMax),
+  "defaultDurations": zod.object({
+  "couples": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "individual": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "child_teen": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "christian_counseling": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)])
+})
+})
+
+
+/**
  * @summary List blocked time ranges
  */
 
@@ -579,6 +700,35 @@ export const CreateBlockedTimeBody = zod.object({
 
 
 export const CreateBlockedTimeResponse = zod.object({
+  "startTime": zod.coerce.date(),
+  "endTime": zod.coerce.date(),
+  "reason": zod.string().min(1)
+}).and(zod.object({
+  "id": zod.number().int(),
+  "createdAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Update a blocked time range
+ */
+export const UpdateBlockedTimeParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const UpdateBlockedTimeBody = zod.object({
+  "startTime": zod.coerce.date(),
+  "endTime": zod.coerce.date(),
+  "reason": zod.string().min(1)
+})
+
+
+
+
+export const UpdateBlockedTimeResponse = zod.object({
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
   "reason": zod.string().min(1)
