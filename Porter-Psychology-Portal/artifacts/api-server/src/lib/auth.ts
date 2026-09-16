@@ -4,6 +4,11 @@ import { execute, getUserById, one, type DbUser } from "./mysql";
 
 const SESSION_COOKIE = "porter_session";
 const SESSION_LENGTH_MS = 1000 * 60 * 60 * 24 * 14;
+const rawIdleMinutes = process.env.SESSION_IDLE_MINUTES ?? "10";
+const SESSION_IDLE_MINUTES = Number(rawIdleMinutes);
+if (!Number.isInteger(SESSION_IDLE_MINUTES) || SESSION_IDLE_MINUTES < 1) {
+  throw new Error("SESSION_IDLE_MINUTES must be a positive integer");
+}
 
 export type AuthenticatedRequest = Request & { user?: DbUser };
 
@@ -26,7 +31,10 @@ async function cleanExpiredSessions() {
   if (Math.random() < 0.01) {
     try {
       await execute(
-        "DELETE FROM sessions WHERE expires_at <= UTC_TIMESTAMP(3)",
+        `DELETE FROM sessions
+         WHERE expires_at <= UTC_TIMESTAMP(3)
+           OR last_activity_at <= DATE_SUB(UTC_TIMESTAMP(3), INTERVAL ? MINUTE)`,
+        [SESSION_IDLE_MINUTES],
       );
     } catch {
       // Cleanup is best-effort and must not fail an otherwise valid request.
@@ -38,7 +46,8 @@ export async function createSession(userId: number, response: Response) {
   const token = randomUUID();
   const expiresAt = new Date(Date.now() + SESSION_LENGTH_MS).toISOString();
   await execute(
-    "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+    `INSERT INTO sessions (token, user_id, expires_at, last_activity_at)
+     VALUES (?, ?, ?, UTC_TIMESTAMP(3))`,
     [token, userId, expiresAt],
   );
   await cleanExpiredSessions();
@@ -64,8 +73,10 @@ export async function attachUser(request: AuthenticatedRequest) {
   const session = await one<
     { user_id: number } & import("mysql2").RowDataPacket
   >(
-    "SELECT user_id FROM sessions WHERE token = ? AND expires_at > UTC_TIMESTAMP(3)",
-    [token],
+    `SELECT user_id FROM sessions
+     WHERE token = ? AND expires_at > UTC_TIMESTAMP(3)
+       AND last_activity_at > DATE_SUB(UTC_TIMESTAMP(3), INTERVAL ? MINUTE)`,
+    [token, SESSION_IDLE_MINUTES],
   );
   if (!session) {
     try {
@@ -80,6 +91,10 @@ export async function attachUser(request: AuthenticatedRequest) {
   }
   const user = await getUserById(session.user_id);
   request.user = user;
+  await execute(
+    "UPDATE sessions SET last_activity_at = UTC_TIMESTAMP(3) WHERE token = ?",
+    [token],
+  );
   await cleanExpiredSessions();
   return user;
 }

@@ -10,6 +10,7 @@ export type AppointmentStatus = typeof AppointmentStatus[keyof typeof Appointmen
 
 
 export const AppointmentStatus = {
+  pending_payment: 'pending_payment',
   pending: 'pending',
   confirmed: 'confirmed',
   completed: 'completed',

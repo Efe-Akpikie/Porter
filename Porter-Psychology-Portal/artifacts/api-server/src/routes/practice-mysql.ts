@@ -5,7 +5,10 @@ import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import { z } from "zod";
 import {
   CancelClientAppointmentParams,
+  ChangeEmailBody,
+  ChangePasswordBody,
   CreateAppointmentBody,
+  CreateAppointmentCheckoutParams,
   CreateBlockedTimeBody,
   CreateClientNoteBody,
   CreateClientNoteParams,
@@ -15,9 +18,14 @@ import {
   GetAdminClientParams,
   GetAdminClientsQueryParams,
   GetCurrentUserResponse,
+  GetAppointmentMeetingParams,
   GetPublicSlotsQueryParams,
+  ForgotPasswordBody,
   LoginBody,
   RegisterBody,
+  ResetPasswordBody,
+  VerifyEmailBody,
+  VerifyEmailChangeBody,
   UpdateAdminAppointmentBody,
   UpdateAdminAppointmentParams,
   UpdateAvailabilityBody,
@@ -53,6 +61,25 @@ import {
   zonedDateKey,
   zonedDateTimeToUtc,
 } from "../lib/timezone";
+import { createAccountToken, findAccountToken } from "../lib/account-tokens";
+import {
+  emailConfigured,
+  sendAccountVerifiedEmail,
+  sendAppointmentNotifications,
+  sendAppointmentReminder,
+  sendEmailChangedNotice,
+  sendEmailChangeVerification,
+  sendPasswordChangedEmail,
+  sendPasswordResetEmail,
+  sendPaymentRequiredEmail,
+  sendVerificationEmail,
+} from "../lib/email";
+import {
+  createCheckout,
+  expireAppointmentCheckout,
+  paymentsConfigured,
+  refundAppointment,
+} from "../lib/payments";
 
 const router: IRouter = Router();
 const adminOnly = requireRole("admin");
@@ -86,6 +113,10 @@ async function appointmentList(
 
 function asAppointments(rows: DbAppointment[]) {
   return rows.map(appointmentResponse);
+}
+
+function asClientAppointments(rows: DbAppointment[]) {
+  return rows.map((row) => ({ ...appointmentResponse(row), notes: null }));
 }
 
 type WaitlistRow = RowDataPacket & {
@@ -129,11 +160,36 @@ async function getBufferMin(executor: Executor = pool) {
   return Number(setting?.value ?? 0);
 }
 
+async function releaseExpiredReservations(executor: Executor = pool) {
+  await execute(
+    `UPDATE appointments
+     SET status = 'cancelled', payment_status = 'failed'
+     WHERE status = 'pending_payment'
+       AND payment_expires_at <= UTC_TIMESTAMP(3)`,
+    [],
+    executor,
+  );
+}
+
+async function getServicePrice(
+  serviceType: string,
+  durationMin: number,
+  executor: Executor = pool,
+) {
+  return one<RowDataPacket & { amount_cents: number }>(
+    `SELECT amount_cents FROM service_prices
+     WHERE service_type = ? AND duration_min = ? AND is_active = TRUE`,
+    [serviceType, durationMin],
+    executor,
+  );
+}
+
 async function buildSlots(
   date: string,
   duration: number,
   executor: Executor = pool,
 ) {
+  await releaseExpiredReservations(executor);
   const bufferMin = await getBufferMin(executor);
   const bounds = localDayBounds(date, ADMIN_TIMEZONE);
   const availability = await query<
@@ -275,6 +331,7 @@ async function withCalendarLock<T>(
 
 class CalendarConflictError extends Error {}
 class CalendarBusyError extends Error {}
+class ConsultationUnavailableError extends Error {}
 
 function isDuplicate(error: unknown) {
   return (
@@ -283,6 +340,26 @@ function isDuplicate(error: unknown) {
     "code" in error &&
     error.code === "ER_DUP_ENTRY"
   );
+}
+
+function authResponse(user: {
+  id: number;
+  email: string;
+  name: string;
+  role: "client" | "admin";
+  timezone: string;
+  email_verified_at?: string | null;
+  pending_email?: string | null;
+}) {
+  return GetCurrentUserResponse.parse({
+    id: Number(user.id),
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    timezone: user.timezone,
+    emailVerified: Boolean(user.email_verified_at),
+    pendingEmail: user.pending_email ?? null,
+  });
 }
 
 router.post("/auth/login", authLimiter, async (request, response) => {
@@ -295,6 +372,8 @@ router.post("/auth/login", authLimiter, async (request, response) => {
       role: "client" | "admin";
       timezone: string;
       password_hash: string;
+      email_verified_at: string | null;
+      pending_email: string | null;
     }
   >("SELECT * FROM users WHERE email = ?", [input.email.trim().toLowerCase()]);
   if (!user || !(await bcrypt.compare(input.password, user.password_hash))) {
@@ -302,13 +381,7 @@ router.post("/auth/login", authLimiter, async (request, response) => {
     return;
   }
   await createSession(user.id, response);
-  response.json({
-    id: Number(user.id),
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    timezone: user.timezone,
-  });
+  response.json(authResponse(user));
 });
 
 router.post("/auth/register", authLimiter, async (request, response) => {
@@ -322,25 +395,40 @@ router.post("/auth/register", authLimiter, async (request, response) => {
     return;
   }
   try {
+    const verifiedAt = emailConfigured ? null : new Date().toISOString();
     const result = await execute(
-      `INSERT INTO users (email, password_hash, role, name, phone, timezone)
-       VALUES (?, ?, 'client', ?, ?, ?)`,
+      `INSERT INTO users
+         (email, password_hash, role, name, phone, timezone, email_verified_at)
+       VALUES (?, ?, 'client', ?, ?, ?, ?)`,
       [
         email,
         await bcrypt.hash(input.password, 12),
         input.name.trim(),
         input.phone ?? null,
         timezone,
+        verifiedAt,
       ],
     );
     await createSession(result.insertId, response);
-    response.status(201).json({
-      id: Number(result.insertId),
-      email,
-      name: input.name.trim(),
-      role: "client",
-      timezone,
-    });
+    if (emailConfigured) {
+      const token = await createAccountToken(
+        result.insertId,
+        "verify_email",
+        24 * 60 * 60 * 1000,
+      );
+      void sendVerificationEmail(email, token);
+    }
+    response.status(201).json(
+      authResponse({
+        id: Number(result.insertId),
+        email,
+        name: input.name.trim(),
+        role: "client",
+        timezone,
+        email_verified_at: verifiedAt,
+        pending_email: null,
+      }),
+    );
   } catch (error) {
     if (isDuplicate(error)) {
       response
@@ -351,6 +439,207 @@ router.post("/auth/register", authLimiter, async (request, response) => {
     throw error;
   }
 });
+
+router.post(
+  "/auth/resend-verification",
+  authLimiter,
+  requireAuth,
+  async (request, response) => {
+    const user = (request as AuthenticatedRequest).user!;
+    if (!user.email_verified_at && emailConfigured) {
+      const token = await createAccountToken(
+        user.id,
+        "verify_email",
+        24 * 60 * 60 * 1000,
+      );
+      await sendVerificationEmail(user.email, token);
+    }
+    response.status(204).send();
+  },
+);
+
+router.post("/auth/verify-email", authLimiter, async (request, response) => {
+  const { token } = VerifyEmailBody.parse(request.body);
+  const result = await transaction(async (connection) => {
+    const record = await findAccountToken(token, "verify_email", connection);
+    if (!record) return undefined;
+    await execute(
+      "UPDATE users SET email_verified_at = UTC_TIMESTAMP(3) WHERE id = ?",
+      [record.user_id],
+      connection,
+    );
+    await execute(
+      "UPDATE auth_tokens SET consumed_at = UTC_TIMESTAMP(3) WHERE id = ?",
+      [record.id],
+      connection,
+    );
+    return getUserById(record.user_id, connection);
+  });
+  if (!result) {
+    response
+      .status(400)
+      .json({ error: "Verification link is invalid or expired" });
+    return;
+  }
+  await createSession(result.id, response);
+  void sendAccountVerifiedEmail(result.email);
+  response.json(authResponse(result));
+});
+
+router.post("/auth/forgot-password", authLimiter, async (request, response) => {
+  const { email } = ForgotPasswordBody.parse(request.body);
+  const user = await one<RowDataPacket & { id: number; email: string }>(
+    "SELECT id, email FROM users WHERE email = ?",
+    [email.trim().toLowerCase()],
+  );
+  if (user && emailConfigured) {
+    const token = await createAccountToken(
+      user.id,
+      "reset_password",
+      60 * 60 * 1000,
+    );
+    void sendPasswordResetEmail(user.email, token);
+  }
+  response.status(204).send();
+});
+
+router.post("/auth/reset-password", authLimiter, async (request, response) => {
+  const input = ResetPasswordBody.parse(request.body);
+  const changedEmail = await transaction(async (connection) => {
+    const record = await findAccountToken(
+      input.token,
+      "reset_password",
+      connection,
+    );
+    if (!record) {
+      throw new z.ZodError([
+        {
+          code: "custom",
+          path: ["token"],
+          message: "Reset link is invalid or expired",
+        },
+      ]);
+    }
+    await execute(
+      "UPDATE users SET password_hash = ? WHERE id = ?",
+      [await bcrypt.hash(input.password, 12), record.user_id],
+      connection,
+    );
+    await execute(
+      "UPDATE auth_tokens SET consumed_at = UTC_TIMESTAMP(3) WHERE id = ?",
+      [record.id],
+      connection,
+    );
+    await execute(
+      "DELETE FROM sessions WHERE user_id = ?",
+      [record.user_id],
+      connection,
+    );
+    const user = await getUserById(record.user_id, connection);
+    return user?.email;
+  });
+  if (changedEmail) void sendPasswordChangedEmail(changedEmail);
+  response.status(204).send();
+});
+
+router.post("/auth/change-password", requireAuth, async (request, response) => {
+  const input = ChangePasswordBody.parse(request.body);
+  const user = (request as AuthenticatedRequest).user!;
+  const credentials = await one<RowDataPacket & { password_hash: string }>(
+    "SELECT password_hash FROM users WHERE id = ?",
+    [user.id],
+  );
+  if (
+    !credentials ||
+    !(await bcrypt.compare(input.currentPassword, credentials.password_hash))
+  ) {
+    response.status(400).json({ error: "Current password is incorrect" });
+    return;
+  }
+  await execute("UPDATE users SET password_hash = ? WHERE id = ?", [
+    await bcrypt.hash(input.newPassword, 12),
+    user.id,
+  ]);
+  await execute("DELETE FROM sessions WHERE user_id = ?", [user.id]);
+  await createSession(user.id, response);
+  void sendPasswordChangedEmail(user.email);
+  response.status(204).send();
+});
+
+router.post("/auth/change-email", requireAuth, async (request, response) => {
+  const input = ChangeEmailBody.parse(request.body);
+  const user = (request as AuthenticatedRequest).user!;
+  const email = input.email.trim().toLowerCase();
+  const credentials = await one<RowDataPacket & { password_hash: string }>(
+    "SELECT password_hash FROM users WHERE id = ?",
+    [user.id],
+  );
+  if (
+    !credentials ||
+    !(await bcrypt.compare(input.currentPassword, credentials.password_hash))
+  ) {
+    response.status(400).json({ error: "Current password is incorrect" });
+    return;
+  }
+  if (await one("SELECT id FROM users WHERE email = ?", [email])) {
+    response.status(409).json({ error: "That email is already in use" });
+    return;
+  }
+  if (!emailConfigured) {
+    response.status(503).json({ error: "Email delivery is not configured" });
+    return;
+  }
+  await execute("UPDATE users SET pending_email = ? WHERE id = ?", [
+    email,
+    user.id,
+  ]);
+  const token = await createAccountToken(
+    user.id,
+    "change_email",
+    24 * 60 * 60 * 1000,
+    email,
+  );
+  await sendEmailChangeVerification(email, token);
+  response.status(204).send();
+});
+
+router.post(
+  "/auth/verify-email-change",
+  authLimiter,
+  async (request, response) => {
+    const { token } = VerifyEmailChangeBody.parse(request.body);
+    const result = await transaction(async (connection) => {
+      const record = await findAccountToken(token, "change_email", connection);
+      if (!record?.new_email) return undefined;
+      const user = await getUserById(record.user_id, connection);
+      if (!user || user.pending_email !== record.new_email) return undefined;
+      await execute(
+        `UPDATE users SET email = ?, pending_email = NULL,
+           email_verified_at = UTC_TIMESTAMP(3) WHERE id = ?`,
+        [record.new_email, user.id],
+        connection,
+      );
+      await execute(
+        "UPDATE auth_tokens SET consumed_at = UTC_TIMESTAMP(3) WHERE id = ?",
+        [record.id],
+        connection,
+      );
+      return {
+        oldEmail: user.email,
+        user: await getUserById(user.id, connection),
+      };
+    });
+    if (!result?.user) {
+      response
+        .status(400)
+        .json({ error: "Email-change link is invalid or expired" });
+      return;
+    }
+    await createSession(result.user.id, response);
+    void sendEmailChangedNotice(result.oldEmail);
+    response.json(authResponse(result.user));
+  },
+);
 
 router.post("/auth/logout", async (request, response) => {
   await clearSession(request, response);
@@ -363,15 +652,7 @@ router.get("/auth/me", async (request, response) => {
     response.status(401).json({ error: "Authentication required" });
     return;
   }
-  response.json(
-    GetCurrentUserResponse.parse({
-      id: Number(user.id),
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      timezone: user.timezone,
-    }),
-  );
+  response.json(authResponse(user));
 });
 
 router.get("/public/slots", async (request, response) => {
@@ -385,14 +666,38 @@ router.get("/public/slots", async (request, response) => {
 });
 
 router.get("/public/practice", async (_request, response) => {
-  const rows = await query<
-    Array<RowDataPacket & { key: string; value: string }>
-  >("SELECT `key`, `value` FROM practice_settings");
+  const [rows, prices] = await Promise.all([
+    query<Array<RowDataPacket & { key: string; value: string }>>(
+      "SELECT `key`, `value` FROM practice_settings",
+    ),
+    query<
+      Array<
+        RowDataPacket & {
+          service_type: string;
+          duration_min: number;
+          amount_cents: number;
+          is_active: number;
+        }
+      >
+    >(
+      `SELECT service_type, duration_min, amount_cents, is_active
+       FROM service_prices ORDER BY service_type, duration_min`,
+    ),
+  ]);
   response.json({
     timezone: ADMIN_TIMEZONE,
     settings: Object.fromEntries(
       rows.map(({ key, value }) => [key, Number(value)]),
     ),
+    prices: prices.map((price) => ({
+      serviceType: price.service_type,
+      durationMin: Number(price.duration_min),
+      amountCents: Number(price.amount_cents),
+      active: Boolean(price.is_active),
+    })),
+    paymentsConfigured,
+    emailConfigured,
+    meetingConfigured: Boolean(process.env.UPHEAL_MEETING_URL),
   });
 });
 
@@ -415,8 +720,8 @@ router.get("/client/dashboard", clientOnly, async (request, response) => {
     ),
   ]);
   response.json({
-    upcoming: asAppointments(upcoming),
-    past: asAppointments(past),
+    upcoming: asClientAppointments(upcoming),
+    past: asClientAppointments(past),
     waitlist: waitlist.map(waitlistResponse),
   });
 });
@@ -432,12 +737,11 @@ router.patch("/client/profile", clientOnly, async (request, response) => {
   const current = (await getUserById(userId))!;
   await execute(
     `UPDATE users SET name = COALESCE(?, name), phone = ?,
-     timezone = COALESCE(?, timezone), notes = ? WHERE id = ?`,
+     timezone = COALESCE(?, timezone) WHERE id = ?`,
     [
       input.name ?? null,
       input.phone === undefined ? current.phone : input.phone,
       input.timezone ?? null,
-      input.notes === undefined ? current.notes : input.notes,
       userId,
     ],
   );
@@ -446,7 +750,7 @@ router.patch("/client/profile", clientOnly, async (request, response) => {
 
 router.get("/client/appointments", clientOnly, async (request, response) => {
   response.json(
-    asAppointments(
+    asClientAppointments(
       await appointmentList("WHERE a.client_id = ?", [
         (request as AuthenticatedRequest).user!.id,
       ]),
@@ -460,6 +764,20 @@ router.post(
   async (request, response) => {
     const { id } = CancelClientAppointmentParams.parse(request.params);
     const userId = (request as AuthenticatedRequest).user!.id;
+    const preliminary = await getAppointment(id);
+    if (!preliminary || Number(preliminary.client_id) !== Number(userId)) {
+      response.status(404).json({ error: "Appointment not found" });
+      return;
+    }
+    if (
+      preliminary.status === "pending_payment" &&
+      !(await expireAppointmentCheckout(preliminary))
+    ) {
+      response.status(409).json({
+        error: "Payment is processing. Refresh before cancelling.",
+      });
+      return;
+    }
     const appointment = await withCalendarLock(async (connection) => {
       const current = await getAppointment(id, connection);
       if (!current || Number(current.client_id) !== Number(userId))
@@ -492,13 +810,80 @@ router.post(
       response.status(404).json({ error: "Appointment not found" });
       return;
     }
-    // TODO: integrate email/SMS service for cancellation and waitlist availability.
-    response.json(appointmentResponse(appointment));
+    if (
+      appointment.payment_status === "paid" ||
+      appointment.payment_status === "not_required"
+    ) {
+      void sendAppointmentNotifications(appointment, "cancelled");
+    }
+    response.json({ ...appointmentResponse(appointment), notes: null });
+  },
+);
+
+router.post(
+  "/client/appointments/:id/checkout",
+  clientOnly,
+  async (request, response) => {
+    const { id } = CreateAppointmentCheckoutParams.parse(request.params);
+    const userId = (request as AuthenticatedRequest).user!.id;
+    const appointment = await getAppointment(id);
+    if (!appointment || Number(appointment.client_id) !== Number(userId)) {
+      response.status(404).json({ error: "Appointment not found" });
+      return;
+    }
+    if (
+      appointment.status !== "pending_payment" ||
+      !appointment.payment_expires_at ||
+      new Date(appointment.payment_expires_at).getTime() <= Date.now()
+    ) {
+      response.status(409).json({ error: "Payment reservation has expired" });
+      return;
+    }
+    response.json({ checkoutUrl: await createCheckout(appointment) });
+  },
+);
+
+router.get(
+  "/client/appointments/:id/meeting",
+  clientOnly,
+  async (request, response) => {
+    const { id } = GetAppointmentMeetingParams.parse(request.params);
+    const userId = (request as AuthenticatedRequest).user!.id;
+    const appointment = await getAppointment(id);
+    if (!appointment || Number(appointment.client_id) !== Number(userId)) {
+      response.status(404).json({ error: "Appointment not found" });
+      return;
+    }
+    const availableFrom = new Date(
+      new Date(appointment.start_time).getTime() - 15 * 60_000,
+    );
+    const availableUntil = new Date(
+      new Date(appointment.end_time).getTime() + 30 * 60_000,
+    );
+    const now = Date.now();
+    const configuredUrl = process.env.UPHEAL_MEETING_URL?.trim();
+    const available =
+      appointment.status === "confirmed" &&
+      Boolean(configuredUrl) &&
+      now >= availableFrom.getTime() &&
+      now <= availableUntil.getTime();
+    response.json({
+      available,
+      joinUrl: available ? configuredUrl : null,
+      availableFrom: availableFrom.toISOString(),
+      availableUntil: availableUntil.toISOString(),
+    });
   },
 );
 
 router.post("/client/waitlist", clientOnly, async (request, response) => {
   const input = CreateWaitlistEntryBody.parse(request.body);
+  if (input.serviceType === "consultation") {
+    response
+      .status(400)
+      .json({ error: "Free consultations are not eligible for the waitlist" });
+    return;
+  }
   const userId = (request as AuthenticatedRequest).user!.id;
   const result = await execute(
     `INSERT INTO waitlist
@@ -518,6 +903,28 @@ router.post("/appointments", requireAuth, async (request, response) => {
   const input = CreateAppointmentBody.parse(request.body);
   const requester = (request as AuthenticatedRequest).user!;
   const clientId = requester.role === "admin" ? input.clientId : requester.id;
+  if (requester.role === "client" && !requester.email_verified_at) {
+    response.status(403).json({ error: "Verify your email before booking" });
+    return;
+  }
+  const isConsultation = input.serviceType === "consultation";
+  if (isConsultation && input.durationMin !== 15) {
+    response.status(400).json({ error: "Consultations are 15 minutes" });
+    return;
+  }
+  const price = !isConsultation
+    ? await getServicePrice(input.serviceType, input.durationMin)
+    : undefined;
+  if (!isConsultation && !price) {
+    response.status(400).json({
+      error: "That service and duration is not available for payment",
+    });
+    return;
+  }
+  if (!isConsultation && !paymentsConfigured) {
+    response.status(503).json({ error: "Online payment is not configured" });
+    return;
+  }
   const start = new Date(input.startTime);
   const end = new Date(input.endTime);
   if (!validateDateRange(start, end, input.durationMin)) {
@@ -534,6 +941,7 @@ router.post("/appointments", requireAuth, async (request, response) => {
   }
   try {
     const appointment = await withCalendarLock(async (connection) => {
+      await releaseExpiredReservations(connection);
       if (requester.role === "client") {
         const slots = await buildSlots(
           zonedDateKey(start, ADMIN_TIMEZONE),
@@ -551,25 +959,65 @@ router.post("/appointments", requireAuth, async (request, response) => {
       if (await hasSchedulingConflict(start, end, undefined, connection)) {
         throw new CalendarConflictError("conflict");
       }
+      if (isConsultation) {
+        const eligibility = await execute(
+          `UPDATE users SET consultation_used_at = UTC_TIMESTAMP(3)
+           WHERE id = ? AND consultation_used_at IS NULL`,
+          [clientId],
+          connection,
+        );
+        if (eligibility.affectedRows !== 1) {
+          throw new ConsultationUnavailableError();
+        }
+      }
+      const pendingPayment = !isConsultation;
+      const paymentExpiresAt = pendingPayment
+        ? new Date(Date.now() + 31 * 60_000).toISOString()
+        : null;
       const result = await execute(
         `INSERT INTO appointments
-          (client_id, start_time, end_time, service_type, duration_min, status, notes)
-         VALUES (?, ?, ?, ?, ?, 'confirmed', ?)`,
+          (client_id, start_time, end_time, service_type, duration_min, status,
+           notes, amount_cents, currency, payment_status, payment_expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?)`,
         [
           clientId,
           start.toISOString(),
           end.toISOString(),
           input.serviceType,
           input.durationMin,
+          pendingPayment ? "pending_payment" : "confirmed",
           input.notes ?? null,
+          pendingPayment ? Number(price!.amount_cents) : 0,
+          pendingPayment ? "pending" : "not_required",
+          paymentExpiresAt,
         ],
         connection,
       );
       return getAppointment(result.insertId, connection);
     });
-    // TODO: integrate email/SMS service for client and practitioner booking confirmation.
-    response.status(201).json(appointmentResponse(appointment!));
+    if (!appointment) throw new Error("Appointment creation failed");
+    if (appointment.status === "pending_payment") {
+      const checkoutUrl = await createCheckout(appointment);
+      if (requester.role === "admin") {
+        void sendPaymentRequiredEmail(appointment);
+      }
+      response
+        .status(201)
+        .json({ appointment: appointmentResponse(appointment), checkoutUrl });
+    } else {
+      void sendAppointmentNotifications(appointment, "booked");
+      response.status(201).json({
+        appointment: appointmentResponse(appointment),
+        checkoutUrl: null,
+      });
+    }
   } catch (error) {
+    if (error instanceof ConsultationUnavailableError) {
+      response
+        .status(409)
+        .json({ error: "Your free consultation has already been used" });
+      return;
+    }
     if (error instanceof CalendarConflictError) {
       response.status(409).json({
         error:
@@ -706,12 +1154,46 @@ router.patch(
     const { id } = UpdateAdminAppointmentParams.parse(request.params);
     const input = UpdateAdminAppointmentBody.parse(request.body);
     try {
+      if (input.status === "cancelled") {
+        const preliminary = await getAppointment(id);
+        if (
+          preliminary?.status === "pending_payment" &&
+          !(await expireAppointmentCheckout(preliminary))
+        ) {
+          response.status(409).json({
+            error: "Payment is processing. Refresh before cancelling.",
+          });
+          return;
+        }
+      }
       const appointment = await withCalendarLock(async (connection) => {
         const current = await getAppointment(id, connection);
         if (!current) return undefined;
+        if (
+          input.status &&
+          ["confirmed", "completed"].includes(input.status) &&
+          !["paid", "not_required"].includes(current.payment_status)
+        ) {
+          throw new CalendarConflictError("payment");
+        }
         const nextStart = input.startTime ?? current.start_time;
         const nextEnd = input.endTime ?? current.end_time;
         const nextDuration = input.durationMin ?? current.duration_min;
+        const nextService = input.serviceType ?? current.service_type;
+        if (
+          (nextService === "consultation" && nextDuration !== 15) ||
+          (nextService !== "consultation" &&
+            ![30, 45, 50, 60, 80, 90, 120].includes(nextDuration))
+        ) {
+          throw new CalendarConflictError("invalid");
+        }
+        if (
+          (input.serviceType !== undefined ||
+            input.durationMin !== undefined) &&
+          current.payment_status !== "not_required"
+        ) {
+          throw new CalendarConflictError("billing");
+        }
         const scheduleChanged =
           input.startTime !== undefined ||
           input.endTime !== undefined ||
@@ -730,7 +1212,8 @@ router.patch(
         await execute(
           `UPDATE appointments SET start_time = ?, end_time = ?,
          status = COALESCE(?, status), notes = ?,
-         service_type = COALESCE(?, service_type), duration_min = ?
+         service_type = COALESCE(?, service_type), duration_min = ?,
+         reminder_sent_at = ?
          WHERE id = ?`,
           [
             nextStart,
@@ -739,6 +1222,7 @@ router.patch(
             input.notes === undefined ? current.notes : input.notes,
             input.serviceType ?? null,
             nextDuration,
+            scheduleChanged ? null : current.reminder_sent_at,
             id,
           ],
           connection,
@@ -749,6 +1233,20 @@ router.patch(
         response.status(404).json({ error: "Appointment not found" });
         return;
       }
+      if (
+        appointment.status === "confirmed" &&
+        (input.startTime !== undefined ||
+          input.endTime !== undefined ||
+          input.durationMin !== undefined)
+      ) {
+        void sendAppointmentNotifications(appointment, "rescheduled");
+      } else if (
+        input.status === "cancelled" &&
+        (appointment.payment_status === "paid" ||
+          appointment.payment_status === "not_required")
+      ) {
+        void sendAppointmentNotifications(appointment, "cancelled");
+      }
       response.json(appointmentResponse(appointment));
     } catch (error) {
       if (error instanceof CalendarConflictError) {
@@ -756,7 +1254,11 @@ router.patch(
           error:
             error.message === "invalid"
               ? "Appointment times and duration do not match"
-              : "That time conflicts with the calendar",
+              : error.message === "payment"
+                ? "Payment is required before confirming this appointment"
+                : error.message === "billing"
+                  ? "Paid appointment service and duration cannot be changed"
+                  : "That time conflicts with the calendar",
         });
         return;
       }
@@ -779,16 +1281,75 @@ router.patch("/admin/appointments", adminOnly, async (request, response) => {
     })
     .parse(request.body);
   const placeholders = input.ids.map(() => "?").join(",");
+  if (["confirmed", "completed"].includes(input.status)) {
+    const unpaid = await one<RowDataPacket & { count: number }>(
+      `SELECT COUNT(*) AS count FROM appointments
+       WHERE id IN (${placeholders})
+         AND payment_status NOT IN ('paid', 'not_required')`,
+      input.ids,
+    );
+    if (Number(unpaid?.count ?? 0) > 0) {
+      response.status(409).json({
+        error: "Payment is required before confirming these appointments",
+      });
+      return;
+    }
+  }
+  if (input.status === "cancelled") {
+    const pending = await appointmentList(
+      `WHERE a.id IN (${placeholders}) AND a.status = 'pending_payment'`,
+      input.ids,
+    );
+    for (const appointment of pending) {
+      if (!(await expireAppointmentCheckout(appointment))) {
+        response.status(409).json({
+          error: "One or more payments are processing. Refresh and try again.",
+        });
+        return;
+      }
+    }
+  }
   await execute(
     `UPDATE appointments SET status = ? WHERE id IN (${placeholders})`,
     [input.status, ...input.ids],
   );
-  response.json(
-    asAppointments(
-      await appointmentList(`WHERE a.id IN (${placeholders})`, input.ids),
-    ),
+  const updated = await appointmentList(
+    `WHERE a.id IN (${placeholders})`,
+    input.ids,
   );
+  if (input.status === "cancelled") {
+    for (const appointment of updated) {
+      if (
+        appointment.payment_status === "paid" ||
+        appointment.payment_status === "not_required"
+      ) {
+        void sendAppointmentNotifications(appointment, "cancelled");
+      }
+    }
+  }
+  response.json(asAppointments(updated));
 });
+
+router.post(
+  "/admin/appointments/:id/refund",
+  adminOnly,
+  async (request, response) => {
+    const id = Number(request.params.id);
+    const appointment = await getAppointment(id);
+    if (!appointment) {
+      response.status(404).json({ error: "Appointment not found" });
+      return;
+    }
+    try {
+      response.json(await refundAppointment(appointment));
+    } catch (error) {
+      response.status(409).json({
+        error:
+          error instanceof Error ? error.message : "Payment cannot be refunded",
+      });
+    }
+  },
+);
 
 router.get("/admin/clients", adminOnly, async (request, response) => {
   const input = GetAdminClientsQueryParams.parse(request.query);
@@ -874,6 +1435,23 @@ router.post(
   },
 );
 
+router.post(
+  "/admin/clients/:id/restore-consultation",
+  adminOnly,
+  async (request, response) => {
+    const id = Number(request.params.id);
+    const result = await execute(
+      "UPDATE users SET consultation_used_at = NULL WHERE id = ? AND role = 'client'",
+      [id],
+    );
+    if (!result.affectedRows) {
+      response.status(404).json({ error: "Client not found" });
+      return;
+    }
+    response.status(204).send();
+  },
+);
+
 router.get("/admin/waitlist", adminOnly, async (_request, response) => {
   const entries = await query<WaitlistRow[]>(
     `SELECT w.*, u.name AS client_name FROM waitlist w
@@ -890,6 +1468,13 @@ router.post(
     const input = CreateAppointmentBody.parse(request.body);
     const start = new Date(input.startTime);
     const end = new Date(input.endTime);
+    const price = await getServicePrice(input.serviceType, input.durationMin);
+    if (!price || !paymentsConfigured) {
+      response.status(503).json({
+        error: "Online payment or pricing is not configured for this session",
+      });
+      return;
+    }
     if (
       !validateDateRange(start, end, input.durationMin) ||
       start.getTime() <= Date.now()
@@ -917,8 +1502,9 @@ router.post(
         }
         const result = await execute(
           `INSERT INTO appointments
-            (client_id, start_time, end_time, service_type, duration_min, status, notes)
-           VALUES (?, ?, ?, ?, ?, 'confirmed', ?)`,
+            (client_id, start_time, end_time, service_type, duration_min, status,
+             notes, amount_cents, currency, payment_status, payment_expires_at)
+           VALUES (?, ?, ?, ?, ?, 'pending_payment', ?, ?, 'CAD', 'pending', ?)`,
           [
             entry.client_id,
             start.toISOString(),
@@ -926,6 +1512,8 @@ router.post(
             input.serviceType,
             input.durationMin,
             input.notes ?? null,
+            Number(price.amount_cents),
+            new Date(Date.now() + 31 * 60_000).toISOString(),
           ],
           connection,
         );
@@ -940,6 +1528,8 @@ router.post(
         response.status(404).json({ error: "Waitlist entry not found" });
         return;
       }
+      await createCheckout(appointment);
+      void sendPaymentRequiredEmail(appointment);
       response.status(201).json(appointmentResponse(appointment));
     } catch (error) {
       if (error instanceof CalendarConflictError) {
@@ -1065,6 +1655,82 @@ router.patch("/admin/settings", adminOnly, async (request, response) => {
   response.json({ bufferMin: input.bufferMin, defaultDurations: durations });
 });
 
+async function servicePriceRows(executor: Executor = pool) {
+  const rows = await query<
+    Array<
+      RowDataPacket & {
+        service_type: string;
+        duration_min: number;
+        amount_cents: number;
+        is_active: number;
+      }
+    >
+  >(
+    `SELECT service_type, duration_min, amount_cents, is_active
+     FROM service_prices ORDER BY service_type, duration_min`,
+    [],
+    executor,
+  );
+  return rows.map((row) => ({
+    serviceType: row.service_type,
+    durationMin: Number(row.duration_min),
+    amountCents: Number(row.amount_cents),
+    active: Boolean(row.is_active),
+  }));
+}
+
+router.get("/admin/prices", adminOnly, async (_request, response) => {
+  response.json(await servicePriceRows());
+});
+
+router.put("/admin/prices", adminOnly, async (request, response) => {
+  const input = z
+    .array(
+      z.object({
+        serviceType: z.enum([
+          "couples",
+          "individual",
+          "child_teen",
+          "christian_counseling",
+        ]),
+        durationMin: z.union([
+          z.literal(30),
+          z.literal(45),
+          z.literal(50),
+          z.literal(60),
+          z.literal(80),
+          z.literal(90),
+          z.literal(120),
+        ]),
+        amountCents: z.number().int().min(50).max(1_000_000),
+        active: z.boolean(),
+      }),
+    )
+    .max(28)
+    .parse(request.body);
+  const unique = new Set(
+    input.map((item) => `${item.serviceType}:${item.durationMin}`),
+  );
+  if (unique.size !== input.length) {
+    response.status(400).json({ error: "Duplicate service price" });
+    return;
+  }
+  const rows = await transaction(async (connection) => {
+    await execute("DELETE FROM service_prices", [], connection);
+    for (const item of input) {
+      await execute(
+        `INSERT INTO service_prices
+          (service_type, duration_min, amount_cents, is_active)
+         VALUES (?, ?, ?, ?)`,
+        [item.serviceType, item.durationMin, item.amountCents, item.active],
+        connection,
+      );
+    }
+    return servicePriceRows(connection);
+  });
+  response.json(rows);
+});
+
 async function blockedTimes(executor: Executor = pool) {
   return query(
     `SELECT id, start_time AS startTime, end_time AS endTime, reason,
@@ -1153,5 +1819,32 @@ router.delete(
     response.status(204).send();
   },
 );
+
+router.post("/jobs/appointment-reminders", async (request, response) => {
+  const expected = process.env.CRON_SECRET;
+  const supplied =
+    request.headers.authorization?.replace(/^Bearer\s+/i, "") ??
+    request.headers["x-cron-secret"];
+  if (!expected || supplied !== expected) {
+    response.status(401).json({ error: "Invalid cron credentials" });
+    return;
+  }
+  const appointments = await appointmentList(
+    `WHERE a.status = 'confirmed' AND a.reminder_sent_at IS NULL
+       AND a.start_time >= DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 23 HOUR)
+       AND a.start_time < DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 25 HOUR)`,
+  );
+  let sent = 0;
+  for (const appointment of appointments) {
+    if (await sendAppointmentReminder(appointment)) {
+      await execute(
+        "UPDATE appointments SET reminder_sent_at = UTC_TIMESTAMP(3) WHERE id = ? AND reminder_sent_at IS NULL",
+        [appointment.id],
+      );
+      sent += 1;
+    }
+  }
+  response.json({ sent });
+});
 
 export default router;

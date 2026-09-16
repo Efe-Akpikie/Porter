@@ -52,19 +52,28 @@ NODE_ENV=production PORT=8080 pnpm run start
 
 ## Environment variables
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | Yes | Aiven MySQL URL: `mysql://user:encoded-password@host:port/database` |
-| `MYSQL_CA_CERT` | Aiven | Aiven CA certificate, including PEM header/footer; escaped `\n` is accepted |
-| `ADMIN_EMAIL` | Production | Creates the initial administrator if that email does not exist |
-| `ADMIN_PASSWORD` | Production | Initial administrator password (minimum 12 characters) |
-| `ADMIN_NAME` | No | Administrator name; defaults to `Lara Akinpelu` |
-| `ADMIN_TIMEZONE` | No | Practice IANA timezone; defaults to `America/Vancouver` |
-| `DB_CONNECTION_LIMIT` | No | MySQL pool size; defaults to `5` |
-| `PORT` | Runtime | HTTP port; Render supplies this |
-| `NODE_ENV` | Production | Set to `production` on Render |
-| `CORS_ORIGIN` | No | Explicit cross-origin frontend URL; unnecessary for the single-service deployment |
-| `SEED_DEMO_DATA` | Development only | Set to `true` to seed demo accounts; ignored in production |
+| Variable                          | Required         | Purpose                                                                           |
+| --------------------------------- | ---------------- | --------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | Yes              | Aiven MySQL URL: `mysql://user:encoded-password@host:port/database`               |
+| `MYSQL_CA_CERT`                   | Aiven            | Aiven CA certificate, including PEM header/footer; escaped `\n` is accepted       |
+| `ADMIN_EMAIL`                     | Production       | Creates the initial administrator if that email does not exist                    |
+| `ADMIN_PASSWORD`                  | Production       | Initial administrator password (minimum 12 characters)                            |
+| `ADMIN_NAME`                      | No               | Administrator name; defaults to `Lara Akinpelu`                                   |
+| `ADMIN_TIMEZONE`                  | No               | Practice IANA timezone; defaults to `America/Vancouver`                           |
+| `DB_CONNECTION_LIMIT`             | No               | MySQL pool size; defaults to `5`                                                  |
+| `PORT`                            | Runtime          | HTTP port; Render supplies this                                                   |
+| `NODE_ENV`                        | Production       | Set to `production` on Render                                                     |
+| `CORS_ORIGIN`                     | No               | Explicit cross-origin frontend URL; unnecessary for the single-service deployment |
+| `SEED_DEMO_DATA`                  | Development only | Set to `true` to seed demo accounts; ignored in production                        |
+| `APP_URL`                         | Integrations     | Public application origin, without a trailing slash                               |
+| `RESEND_API_KEY`                  | Email            | Resend sending API key                                                            |
+| `EMAIL_FROM`                      | Email            | Verified sender, such as `Porter Psychology <appointments@updates.example.com>`   |
+| `PRACTITIONER_NOTIFICATION_EMAIL` | Email            | Lara's private booking-notification address                                       |
+| `STRIPE_SECRET_KEY`               | Payments         | Stripe test or live secret key                                                    |
+| `STRIPE_WEBHOOK_SECRET`           | Payments         | Signing secret for this service's Stripe webhook                                  |
+| `UPHEAL_MEETING_URL`              | Meetings         | Lara's reusable Upheal waiting-room URL                                           |
+| `CRON_SECRET`                     | Reminders        | Bearer token protecting the reminder job                                          |
+| `SESSION_IDLE_MINUTES`            | No               | Server-enforced inactivity limit; defaults to `10`                                |
 
 The bootstrap variables never overwrite an existing administrator or reset its
 password. After the first successful startup, manage that account in the
@@ -88,8 +97,7 @@ users from taking the same slot.
 The repository-root `render.yaml` defines the free Node web service.
 
 1. In Render, create a Blueprint from this GitHub repository.
-2. Enter the secret values requested by the Blueprint:
-   `DATABASE_URL`, `MYSQL_CA_CERT`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD`.
+2. Enter the database/admin secrets requested by the Blueprint.
 3. Confirm `ADMIN_TIMEZONE` before deploying.
 4. Deploy and verify `/api/healthz`, client registration, client booking, and
    administrator sign-in.
@@ -112,15 +120,46 @@ creates:
 
 Do not use those records for real users.
 
+## Resend, Stripe, and Upheal
+
+Email verification is enforced for new registrations only when Resend is fully
+configured. Existing accounts are preserved as verified during migration.
+Password-reset tokens are random, hashed in MySQL, single-use, and expire after
+one hour.
+
+For Stripe:
+
+1. Set test-mode keys in Render.
+2. Create a webhook endpoint at
+   `https://YOUR_DOMAIN/api/payments/stripe/webhook`.
+3. Subscribe it to `checkout.session.completed` and
+   `checkout.session.expired`.
+4. Copy its signing secret to `STRIPE_WEBHOOK_SECRET`.
+5. Configure active CAD prices under **Admin → Availability**.
+6. Complete a test payment and refund before switching to live keys.
+
+Paid appointments remain reserved for approximately 30 minutes and become
+confirmed only from a signed, amount-validated Stripe webhook. The one-time
+15-minute consultation bypasses Stripe. Lara controls refunds manually.
+
+Set `UPHEAL_MEETING_URL` to the reusable waiting-room link. Authenticated
+clients can retrieve it only for a confirmed appointment from 15 minutes before
+the start through 30 minutes after the end.
+
+Call `POST /api/jobs/appointment-reminders` on a regular schedule with
+`Authorization: Bearer CRON_SECRET`. This endpoint sends unsent reminders for
+appointments approximately 24 hours away. A scheduler outside a sleeping free
+Render service is required.
+
 ## Placeholder content and notifications
 
 Search `artifacts/porter-psychology/src/App.tsx` for `[Insert` and
 `[Placeholder` to locate copy and image placeholders.
 
-Email, SMS, push delivery, and automatic video meeting creation are not
-implemented. Booking and cancellation still update the database, and the
-intentional integration stubs are marked with `TODO` comments in
-`artifacts/api-server/src/routes/practice-mysql.ts`.
+Resend handles verification, account-change, booking, rescheduling,
+cancellation, payment-required, and reminder emails. Email content intentionally
+omits service type and clinical details. SMS and push delivery are not
+implemented.
 
 ## Production limitations
 
@@ -136,3 +175,9 @@ Before storing real client or health information:
 
 Using TLS and a hosted database does not by itself make the application
 HIPAA/PIPEDA compliant.
+
+Porter stores administrative scheduling information only. Keep clinical notes,
+session content, video, billing documents, and treatment records in the
+practice's approved clinical system (currently intended to be Upheal). The
+remaining admin note field is explicitly for non-clinical scheduling
+coordination.

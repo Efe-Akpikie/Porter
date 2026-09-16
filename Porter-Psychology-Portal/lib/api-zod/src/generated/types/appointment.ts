@@ -5,6 +5,7 @@
  * API for Porter Psychology virtual practice scheduling and client care.
  * OpenAPI spec version: 0.1.0
  */
+import type { AppointmentPaymentStatus } from './appointmentPaymentStatus';
 import type { AppointmentStatus } from './appointmentStatus';
 import type { ServiceType } from './serviceType';
 
@@ -20,4 +21,10 @@ export interface Appointment {
   status: AppointmentStatus;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  amountCents: number | null;
+  currency: string;
+  paymentStatus: AppointmentPaymentStatus;
+  /** @nullable */
+  paymentExpiresAt: Date | null;
 }

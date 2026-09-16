@@ -21,6 +21,7 @@ export type AppointmentStatus = typeof AppointmentStatus[keyof typeof Appointmen
 
 
 export const AppointmentStatus = {
+  pending_payment: 'pending_payment',
   pending: 'pending',
   confirmed: 'confirmed',
   completed: 'completed',
@@ -32,6 +33,7 @@ export type ServiceType = typeof ServiceType[keyof typeof ServiceType];
 
 
 export const ServiceType = {
+  consultation: 'consultation',
   couples: 'couples',
   individual: 'individual',
   child_teen: 'child_teen',
@@ -53,6 +55,9 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   timezone: string;
+  emailVerified: boolean;
+  /** @nullable */
+  pendingEmail: string | null;
 }
 
 export interface LoginInput {
@@ -70,7 +75,7 @@ export interface RegisterInput {
   /** @maxLength 320 */
   email: string;
   /**
-     * @minLength 8
+     * @minLength 12
      * @maxLength 128
      */
   password: string;
@@ -83,6 +88,55 @@ export interface RegisterInput {
   timezone?: string;
 }
 
+export interface EmailInput {
+  /** @maxLength 320 */
+  email: string;
+}
+
+export interface TokenInput {
+  /**
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+}
+
+export interface ResetPasswordInput {
+  /**
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+  /**
+     * @minLength 12
+     * @maxLength 128
+     */
+  password: string;
+}
+
+export interface ChangePasswordInput {
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  currentPassword: string;
+  /**
+     * @minLength 12
+     * @maxLength 128
+     */
+  newPassword: string;
+}
+
+export interface ChangeEmailInput {
+  /** @maxLength 320 */
+  email: string;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  currentPassword: string;
+}
+
 export interface UserProfile {
   id: number;
   email: string;
@@ -92,6 +146,10 @@ export interface UserProfile {
   timezone: string;
   /** @nullable */
   notes: string | null;
+  emailVerified: boolean;
+  /** @nullable */
+  pendingEmail: string | null;
+  consultationAvailable: boolean;
 }
 
 export interface ProfileUpdate {
@@ -103,6 +161,17 @@ export interface ProfileUpdate {
   /** @nullable */
   notes?: string | null;
 }
+
+export type AppointmentPaymentStatus = typeof AppointmentPaymentStatus[keyof typeof AppointmentPaymentStatus];
+
+
+export const AppointmentPaymentStatus = {
+  not_required: 'not_required',
+  pending: 'pending',
+  paid: 'paid',
+  refunded: 'refunded',
+  failed: 'failed',
+} as const;
 
 export interface Appointment {
   id: number;
@@ -116,12 +185,19 @@ export interface Appointment {
   status: AppointmentStatus;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  amountCents: number | null;
+  currency: string;
+  paymentStatus: AppointmentPaymentStatus;
+  /** @nullable */
+  paymentExpiresAt: string | null;
 }
 
 export type AppointmentInputDurationMin = typeof AppointmentInputDurationMin[keyof typeof AppointmentInputDurationMin];
 
 
 export const AppointmentInputDurationMin = {
+  NUMBER_15: 15,
   NUMBER_30: 30,
   NUMBER_45: 45,
   NUMBER_50: 50,
@@ -139,6 +215,24 @@ export interface AppointmentInput {
   durationMin: AppointmentInputDurationMin;
   /** @nullable */
   notes?: string | null;
+}
+
+export interface BookingResult {
+  appointment: Appointment;
+  /** @nullable */
+  checkoutUrl: string | null;
+}
+
+export interface CheckoutResult {
+  checkoutUrl: string;
+}
+
+export interface MeetingAccess {
+  available: boolean;
+  /** @nullable */
+  joinUrl: string | null;
+  availableFrom: string;
+  availableUntil: string;
 }
 
 export type AppointmentUpdateDurationMin = typeof AppointmentUpdateDurationMin[keyof typeof AppointmentUpdateDurationMin];
@@ -185,9 +279,47 @@ export interface SlotGroups {
 
 export type PublicPracticeSettings = {[key: string]: number};
 
+export type ServicePriceServiceType = typeof ServicePriceServiceType[keyof typeof ServicePriceServiceType];
+
+
+export const ServicePriceServiceType = {
+  couples: 'couples',
+  individual: 'individual',
+  child_teen: 'child_teen',
+  christian_counseling: 'christian_counseling',
+} as const;
+
+export type ServicePriceDurationMin = typeof ServicePriceDurationMin[keyof typeof ServicePriceDurationMin];
+
+
+export const ServicePriceDurationMin = {
+  NUMBER_30: 30,
+  NUMBER_45: 45,
+  NUMBER_50: 50,
+  NUMBER_60: 60,
+  NUMBER_80: 80,
+  NUMBER_90: 90,
+  NUMBER_120: 120,
+} as const;
+
+export interface ServicePrice {
+  serviceType: ServicePriceServiceType;
+  durationMin: ServicePriceDurationMin;
+  /**
+     * @minimum 50
+     * @maximum 1000000
+     */
+  amountCents: number;
+  active: boolean;
+}
+
 export interface PublicPractice {
   timezone: string;
   settings: PublicPracticeSettings;
+  prices: ServicePrice[];
+  paymentsConfigured: boolean;
+  emailConfigured: boolean;
+  meetingConfigured: boolean;
 }
 
 export type WaitlistEntryStatus = typeof WaitlistEntryStatus[keyof typeof WaitlistEntryStatus];
@@ -374,6 +506,7 @@ export type DurationParamParameter = typeof DurationParamParameter[keyof typeof 
 
 
 export const DurationParamParameter = {
+  NUMBER_15: 15,
   NUMBER_30: 30,
   NUMBER_45: 45,
   NUMBER_50: 50,
@@ -417,4 +550,8 @@ export const GetAdminClientsSort = {
   newest: 'newest',
   appointments: 'appointments',
 } as const;
+
+export type SendAppointmentReminders200 = {
+  sent: number;
+};
 

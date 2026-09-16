@@ -157,6 +157,9 @@ const migrations = [
     phone VARCHAR(50) NULL,
     timezone VARCHAR(100) NOT NULL,
     notes TEXT NULL,
+    email_verified_at DATETIME(3) NULL,
+    pending_email VARCHAR(320) NULL,
+    consultation_used_at DATETIME(3) NULL,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX idx_users_role_name (role, name)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -165,6 +168,7 @@ const migrations = [
     token CHAR(36) NOT NULL UNIQUE,
     user_id BIGINT UNSIGNED NOT NULL,
     expires_at DATETIME(3) NOT NULL,
+    last_activity_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_sessions_expiry (expires_at),
     INDEX idx_sessions_user (user_id)
@@ -174,14 +178,22 @@ const migrations = [
     client_id BIGINT UNSIGNED NOT NULL,
     start_time DATETIME(3) NOT NULL,
     end_time DATETIME(3) NOT NULL,
-    service_type ENUM('couples', 'individual', 'child_teen', 'christian_counseling') NOT NULL,
+    service_type ENUM('consultation', 'couples', 'individual', 'child_teen', 'christian_counseling') NOT NULL,
     duration_min SMALLINT UNSIGNED NOT NULL,
-    status ENUM('pending', 'confirmed', 'completed', 'cancelled', 'no_show') NOT NULL DEFAULT 'confirmed',
+    status ENUM('pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show') NOT NULL DEFAULT 'confirmed',
     notes TEXT NULL,
+    amount_cents INT UNSIGNED NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'CAD',
+    payment_status ENUM('not_required', 'pending', 'paid', 'refunded', 'failed') NOT NULL DEFAULT 'not_required',
+    payment_expires_at DATETIME(3) NULL,
+    stripe_checkout_session_id VARCHAR(255) NULL,
+    stripe_payment_intent_id VARCHAR(255) NULL,
+    reminder_sent_at DATETIME(3) NULL,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     CONSTRAINT fk_appointments_client FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_appointments_calendar (start_time, end_time, status),
-    INDEX idx_appointments_client_time (client_id, start_time)
+    INDEX idx_appointments_client_time (client_id, start_time),
+    UNIQUE INDEX idx_appointments_stripe_session (stripe_checkout_session_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS availability (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -229,6 +241,46 @@ const migrations = [
     \`key\` VARCHAR(100) NOT NULL PRIMARY KEY,
     \`value\` VARCHAR(255) NOT NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    purpose ENUM('verify_email', 'reset_password', 'change_email') NOT NULL,
+    new_email VARCHAR(320) NULL,
+    expires_at DATETIME(3) NOT NULL,
+    consumed_at DATETIME(3) NULL,
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    CONSTRAINT fk_auth_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_auth_tokens_user_purpose (user_id, purpose, expires_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS service_prices (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    service_type ENUM('couples', 'individual', 'child_teen', 'christian_counseling') NOT NULL,
+    duration_min SMALLINT UNSIGNED NOT NULL,
+    amount_cents INT UNSIGNED NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    UNIQUE KEY uq_service_prices_service_duration (service_type, duration_min)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    event_id VARCHAR(255) NOT NULL PRIMARY KEY,
+    status ENUM('processing', 'processed') NOT NULL DEFAULT 'processing',
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_stripe_webhook_events_updated (status, updated_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at DATETIME(3) NULL`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email VARCHAR(320) NULL`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS consultation_used_at DATETIME(3) NULL`,
+  `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_activity_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)`,
+  `ALTER TABLE appointments MODIFY COLUMN service_type ENUM('consultation', 'couples', 'individual', 'child_teen', 'christian_counseling') NOT NULL`,
+  `ALTER TABLE appointments MODIFY COLUMN status ENUM('pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show') NOT NULL DEFAULT 'confirmed'`,
+  `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS amount_cents INT UNSIGNED NULL`,
+  `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS currency CHAR(3) NOT NULL DEFAULT 'CAD'`,
+  `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status ENUM('not_required', 'pending', 'paid', 'refunded', 'failed') NOT NULL DEFAULT 'not_required'`,
+  `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_expires_at DATETIME(3) NULL`,
+  `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS stripe_checkout_session_id VARCHAR(255) NULL`,
+  `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS stripe_payment_intent_id VARCHAR(255) NULL`,
+  `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_sent_at DATETIME(3) NULL`,
 ];
 
 const defaultSettings = [
@@ -249,8 +301,8 @@ async function seedDemoData(connection: PoolConnection) {
 
   const passwordHash = await bcrypt.hash("admin123", 10);
   const admin = await execute(
-    `INSERT INTO users (email, password_hash, role, name, phone, timezone, notes)
-     VALUES (?, ?, 'admin', ?, ?, ?, ?)`,
+    `INSERT INTO users (email, password_hash, role, name, phone, timezone, notes, email_verified_at)
+     VALUES (?, ?, 'admin', ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
     [
       "admin@porterpsychology.com",
       passwordHash,
@@ -262,8 +314,8 @@ async function seedDemoData(connection: PoolConnection) {
     connection,
   );
   const client = await execute(
-    `INSERT INTO users (email, password_hash, role, name, phone, timezone, notes)
-     VALUES (?, ?, 'client', ?, ?, ?, ?)`,
+    `INSERT INTO users (email, password_hash, role, name, phone, timezone, notes, email_verified_at)
+     VALUES (?, ?, 'client', ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
     [
       "maya.chen@example.com",
       await bcrypt.hash("client123", 10),
@@ -342,8 +394,8 @@ async function ensureBootstrapAdmin(connection: PoolConnection) {
   }
 
   await execute(
-    `INSERT INTO users (email, password_hash, role, name, timezone)
-     VALUES (?, ?, 'admin', ?, ?)`,
+    `INSERT INTO users (email, password_hash, role, name, timezone, email_verified_at)
+     VALUES (?, ?, 'admin', ?, ?, UTC_TIMESTAMP(3))`,
     [email, await bcrypt.hash(password, 12), name, ADMIN_TIMEZONE],
     connection,
   );
@@ -375,6 +427,37 @@ export async function initializeDatabase() {
       );
     }
     await ensureBootstrapAdmin(connection);
+    const verificationMigrated = await one<RowDataPacket & { value: string }>(
+      "SELECT `value` FROM schema_metadata WHERE `key` = 'existing_users_email_verified'",
+      [],
+      connection,
+    );
+    if (!verificationMigrated) {
+      await execute(
+        "UPDATE users SET email_verified_at = COALESCE(email_verified_at, created_at)",
+        [],
+        connection,
+      );
+      await execute(
+        "INSERT INTO schema_metadata (`key`, `value`) VALUES ('existing_users_email_verified', '1')",
+        [],
+        connection,
+      );
+    }
+    await execute(
+      `DELETE FROM auth_tokens
+       WHERE expires_at < UTC_TIMESTAMP(3)
+          OR consumed_at < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 7 DAY)`,
+      [],
+      connection,
+    );
+    await execute(
+      `DELETE FROM stripe_webhook_events
+       WHERE status = 'processed'
+         AND updated_at < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 90 DAY)`,
+      [],
+      connection,
+    );
 
     // Weekly availability is operational configuration, not demo identity/data.
     // Initialize it only for a brand-new empty calendar and never overwrite edits.
@@ -452,6 +535,9 @@ export type DbUser = RowDataPacket & {
   phone: string | null;
   timezone: string;
   notes: string | null;
+  email_verified_at: string | null;
+  pending_email: string | null;
+  consultation_used_at: string | null;
 };
 
 export type DbAppointment = RowDataPacket & {
@@ -462,15 +548,33 @@ export type DbAppointment = RowDataPacket & {
   start_time: string;
   end_time: string;
   service_type:
-    "couples" | "individual" | "child_teen" | "christian_counseling";
+    | "consultation"
+    | "couples"
+    | "individual"
+    | "child_teen"
+    | "christian_counseling";
   duration_min: number;
-  status: "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
+  status:
+    | "pending_payment"
+    | "pending"
+    | "confirmed"
+    | "completed"
+    | "cancelled"
+    | "no_show";
   notes: string | null;
+  amount_cents: number | null;
+  currency: string;
+  payment_status: "not_required" | "pending" | "paid" | "refunded" | "failed";
+  payment_expires_at: string | null;
+  stripe_checkout_session_id: string | null;
+  stripe_payment_intent_id: string | null;
+  reminder_sent_at: string | null;
 };
 
 export function getUserById(id: number, executor: Executor = pool) {
   return one<DbUser>(
-    "SELECT id, email, role, name, phone, timezone, notes FROM users WHERE id = ?",
+    `SELECT id, email, role, name, phone, timezone, notes, email_verified_at,
+       pending_email, consultation_used_at FROM users WHERE id = ?`,
     [id],
     executor,
   );
@@ -497,6 +601,10 @@ export function appointmentResponse(row: DbAppointment) {
     durationMin: Number(row.duration_min),
     status: row.status,
     notes: row.notes,
+    amountCents: row.amount_cents === null ? null : Number(row.amount_cents),
+    currency: row.currency,
+    paymentStatus: row.payment_status,
+    paymentExpiresAt: row.payment_expires_at,
   };
 }
 
@@ -507,6 +615,9 @@ export function userResponse(row: DbUser) {
     name: row.name,
     phone: row.phone,
     timezone: row.timezone,
-    notes: row.notes,
+    notes: null,
+    emailVerified: Boolean(row.email_verified_at),
+    pendingEmail: row.pending_email,
+    consultationAvailable: row.consultation_used_at === null,
   };
 }

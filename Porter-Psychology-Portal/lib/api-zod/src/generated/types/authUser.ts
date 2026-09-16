@@ -13,4 +13,7 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   timezone: string;
+  emailVerified: boolean;
+  /** @nullable */
+  pendingEmail: string | null;
 }

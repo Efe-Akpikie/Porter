@@ -27,3 +27,21 @@ services:
         value: America/Vancouver
       - key: DB_CONNECTION_LIMIT
         value: "5"
+      - key: APP_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: PRACTITIONER_NOTIFICATION_EMAIL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: UPHEAL_MEETING_URL
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true
+      - key: SESSION_IDLE_MINUTES
+        value: "10"
