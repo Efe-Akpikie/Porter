@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import type { PoolConnection as CorePoolConnection } from "mysql2";
 import mysql, {
   type PoolConnection,
   type ResultSetHeader,
@@ -79,11 +80,13 @@ function databaseConfig() {
 
 export const pool = mysql.createPool(databaseConfig());
 pool.on("connection", (connection) => {
+  const coreConnection = connection as unknown as CorePoolConnection;
   // Queue this before the connection can serve application work so SQL
   // functions and TIMESTAMP values consistently use UTC.
-  void connection
+  void coreConnection
+    .promise()
     .query("SET time_zone = '+00:00'")
-    .catch(() => connection.destroy());
+    .catch(() => coreConnection.destroy());
 });
 
 const isoDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
