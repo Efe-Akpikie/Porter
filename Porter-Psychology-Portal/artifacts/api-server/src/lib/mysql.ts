@@ -82,6 +82,7 @@ pool.on("connection", (connection) => {
   // Queue this before the connection can serve application work so SQL
   // functions and TIMESTAMP values consistently use UTC.
   void connection
+    .promise()
     .query("SET time_zone = '+00:00'")
     .catch(() => connection.destroy());
 });
