@@ -1,5 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -44,8 +45,8 @@ app.use("/api", router);
 
 if (process.env.NODE_ENV === "production") {
   const publicDirectory = path.resolve(
-    process.cwd(),
-    "artifacts/porter-psychology/dist/public",
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../porter-psychology/dist/public",
   );
   const indexFile = path.join(publicDirectory, "index.html");
 
