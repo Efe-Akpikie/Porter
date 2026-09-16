@@ -441,19 +441,18 @@ function Landing() {
                 seeking Christian counseling.
               </p>
             </div>
-            <div className="relative mx-auto h-[400px] w-[310px] animate-rise animate-rise-2">
+            <div className="relative mx-auto h-[440px] w-[340px] max-w-full animate-rise animate-rise-2">
               <div className="absolute inset-5 rounded-[52%_48%_45%_55%] bg-[#c2d1c1]" />
               <div className="absolute inset-10 rounded-[46%_54%_53%_47%] border border-primary/30" />
-              <div className="absolute left-1/2 top-1/2 w-full -translate-x-1/2 -translate-y-1/2 text-center">
-                <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#f2e8d3] font-semibold text-primary">
-                  PP
-                </div>
+              <img
+                src="/images/lara-akinpelu.png"
+                alt="Lara Akinpelu, Registered Provisional Psychologist"
+                className="absolute inset-x-0 top-0 h-[390px] w-full object-contain object-bottom drop-shadow-xl"
+              />
+              <div className="absolute inset-x-3 bottom-0 rounded-2xl border border-white/60 bg-[#f7f0e5]/95 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
                 <p className="display text-2xl text-[#263b39]">Lara Akinpelu</p>
                 <p className="mt-2 text-sm text-[#536762]">
                   Registered Provisional Psychologist
-                </p>
-                <p className="mono mt-8 text-[10px] uppercase tracking-[.18em] text-[#536762]">
-                  [Placeholder — replace with headshot]
                 </p>
               </div>
             </div>
