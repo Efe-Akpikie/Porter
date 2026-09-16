@@ -261,6 +261,13 @@ const migrations = [
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE KEY uq_service_prices_service_duration (service_type, duration_min)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    event_id VARCHAR(255) NOT NULL PRIMARY KEY,
+    status ENUM('processing', 'processed') NOT NULL DEFAULT 'processing',
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_stripe_webhook_events_updated (status, updated_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at DATETIME(3) NULL`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email VARCHAR(320) NULL`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS consultation_used_at DATETIME(3) NULL`,
@@ -441,6 +448,13 @@ export async function initializeDatabase() {
       `DELETE FROM auth_tokens
        WHERE expires_at < UTC_TIMESTAMP(3)
           OR consumed_at < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 7 DAY)`,
+      [],
+      connection,
+    );
+    await execute(
+      `DELETE FROM stripe_webhook_events
+       WHERE status = 'processed'
+         AND updated_at < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 90 DAY)`,
       [],
       connection,
     );

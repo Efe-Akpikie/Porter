@@ -129,6 +129,26 @@ async function expireCheckout(session: Stripe.Checkout.Session) {
   );
 }
 
+async function claimWebhookEvent(eventId: string) {
+  const inserted = await execute(
+    `INSERT IGNORE INTO stripe_webhook_events (event_id, status)
+     VALUES (?, 'processing')`,
+    [eventId],
+  );
+  if (inserted.affectedRows === 1) return true;
+
+  // A process can terminate after claiming an event. Stripe retries can
+  // reclaim an unfinished event after a short safety window.
+  const reclaimed = await execute(
+    `UPDATE stripe_webhook_events
+     SET updated_at = UTC_TIMESTAMP(3)
+     WHERE event_id = ? AND status = 'processing'
+       AND updated_at < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 5 MINUTE)`,
+    [eventId],
+  );
+  return reclaimed.affectedRows === 1;
+}
+
 export async function stripeWebhook(request: Request, response: Response) {
   if (!stripe || !webhookSecret) {
     response.status(503).json({ error: "Stripe webhook is not configured" });
@@ -150,14 +170,28 @@ export async function stripeWebhook(request: Request, response: Response) {
     response.status(400).json({ error: "Invalid Stripe signature" });
     return;
   }
+  if (!(await claimWebhookEvent(event.id))) {
+    response.json({ received: true });
+    return;
+  }
   try {
     if (event.type === "checkout.session.completed") {
       await completeCheckout(event.data.object);
     } else if (event.type === "checkout.session.expired") {
       await expireCheckout(event.data.object);
     }
+    await execute(
+      `UPDATE stripe_webhook_events
+       SET status = 'processed', updated_at = UTC_TIMESTAMP(3)
+       WHERE event_id = ?`,
+      [event.id],
+    );
     response.json({ received: true });
   } catch (error) {
+    await execute(
+      "DELETE FROM stripe_webhook_events WHERE event_id = ? AND status = 'processing'",
+      [event.id],
+    ).catch(() => undefined);
     logger.error({ error, eventId: event.id }, "Stripe webhook failed");
     response.status(500).json({ error: "Webhook processing failed" });
   }
