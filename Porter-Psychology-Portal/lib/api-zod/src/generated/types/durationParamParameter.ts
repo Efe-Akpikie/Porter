@@ -10,6 +10,7 @@ export type DurationParamParameter = typeof DurationParamParameter[keyof typeof 
 
 
 export const DurationParamParameter = {
+  NUMBER_15: 15,
   NUMBER_30: 30,
   NUMBER_45: 45,
   NUMBER_50: 50,

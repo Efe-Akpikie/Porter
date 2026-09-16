@@ -90,6 +90,106 @@ paths:
                 $ref: "#/components/schemas/AuthUser"
         "401":
           description: Not authenticated
+  /auth/resend-verification:
+    post:
+      operationId: resendVerification
+      tags: [auth]
+      summary: Send a new email verification link
+      responses:
+        "204":
+          description: Verification sent when required
+  /auth/verify-email:
+    post:
+      operationId: verifyEmail
+      tags: [auth]
+      summary: Verify a client email address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenInput"
+      responses:
+        "200":
+          description: Updated authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+  /auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      summary: Request a password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailInput"
+      responses:
+        "204":
+          description: Request accepted
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Reset a password using an emailed token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordInput"
+      responses:
+        "204":
+          description: Password reset
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change the current user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordInput"
+      responses:
+        "204":
+          description: Password changed
+  /auth/change-email:
+    post:
+      operationId: changeEmail
+      tags: [auth]
+      summary: Request a verified account email change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeEmailInput"
+      responses:
+        "204":
+          description: Verification sent to the new address
+  /auth/verify-email-change:
+    post:
+      operationId: verifyEmailChange
+      tags: [auth]
+      summary: Complete an account email change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenInput"
+      responses:
+        "200":
+          description: Updated authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
   /public/slots:
     get:
       operationId: getPublicSlots
@@ -186,6 +286,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Appointment"
+  /client/appointments/{id}/checkout:
+    post:
+      operationId: createAppointmentCheckout
+      tags: [client]
+      summary: Create or retry Stripe Checkout for a pending appointment
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Stripe Checkout URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutResult"
+  /client/appointments/{id}/meeting:
+    get:
+      operationId: getAppointmentMeeting
+      tags: [client]
+      summary: Get time-gated Upheal meeting access
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Meeting availability
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingAccess"
   /client/waitlist:
     post:
       operationId: createWaitlistEntry
@@ -221,9 +349,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Appointment"
+                $ref: "#/components/schemas/BookingResult"
         "409":
           description: Slot is no longer available
+  /payments/stripe/webhook:
+    post:
+      operationId: receiveStripeWebhook
+      tags: [health]
+      summary: Receive signed Stripe events
+      responses:
+        "200":
+          description: Event processed
   /admin/summary:
     get:
       operationId: getAdminSummary
@@ -373,6 +509,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClientNote"
+  /admin/clients/{id}/restore-consultation:
+    post:
+      operationId: restoreClientConsultation
+      tags: [admin]
+      summary: Restore a client's one-time free consultation eligibility
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Eligibility restored
+  /admin/appointments/{id}/refund:
+    post:
+      operationId: refundAdminAppointment
+      tags: [admin]
+      summary: Refund a paid appointment through Stripe
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Refunded appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
   /admin/waitlist:
     get:
       operationId: getAdminWaitlist
@@ -471,6 +631,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PracticeSettings"
+  /admin/prices:
+    get:
+      operationId: getAdminPrices
+      tags: [admin]
+      summary: List configured service-duration prices
+      responses:
+        "200":
+          description: Price configuration
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServicePrice"
+    put:
+      operationId: updateAdminPrices
+      tags: [admin]
+      summary: Replace service-duration price configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/ServicePrice"
+      responses:
+        "200":
+          description: Updated price configuration
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServicePrice"
+  /jobs/appointment-reminders:
+    post:
+      operationId: sendAppointmentReminders
+      tags: [health]
+      summary: Send due appointment reminders using a cron secret
+      responses:
+        "200":
+          description: Reminder run result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: integer }
+                required: [sent]
   /admin/blocked-times:
     get:
       operationId: getBlockedTimes
@@ -552,7 +762,7 @@ components:
       required: true
       schema:
         type: integer
-        enum: [30, 45, 50, 60, 80, 90, 120]
+        enum: [15, 30, 45, 50, 60, 80, 90, 120]
     StartParam:
       name: start
       in: query
@@ -577,10 +787,11 @@ components:
       enum: [client, admin]
     AppointmentStatus:
       type: string
-      enum: [pending, confirmed, completed, cancelled, no_show]
+      enum: [pending_payment, pending, confirmed, completed, cancelled, no_show]
     ServiceType:
       type: string
-      enum: [couples, individual, child_teen, christian_counseling]
+      enum:
+        [consultation, couples, individual, child_teen, christian_counseling]
     TimeWindow:
       type: string
       enum: [morning, afternoon, evening]
@@ -592,7 +803,9 @@ components:
         name: { type: string }
         role: { $ref: "#/components/schemas/UserRole" }
         timezone: { type: string }
-      required: [id, email, name, role, timezone]
+        emailVerified: { type: boolean }
+        pendingEmail: { type: ["string", "null"], format: email }
+      required: [id, email, name, role, timezone, emailVerified, pendingEmail]
     LoginInput:
       type: object
       properties:
@@ -604,10 +817,38 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
         email: { type: string, format: email, maxLength: 320 }
-        password: { type: string, minLength: 8, maxLength: 128 }
+        password: { type: string, minLength: 12, maxLength: 128 }
         phone: { type: string, maxLength: 50 }
         timezone: { type: string, minLength: 1, maxLength: 100 }
       required: [name, email, password]
+    EmailInput:
+      type: object
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+      required: [email]
+    TokenInput:
+      type: object
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256 }
+      required: [token]
+    ResetPasswordInput:
+      type: object
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256 }
+        password: { type: string, minLength: 12, maxLength: 128 }
+      required: [token, password]
+    ChangePasswordInput:
+      type: object
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 128 }
+        newPassword: { type: string, minLength: 12, maxLength: 128 }
+      required: [currentPassword, newPassword]
+    ChangeEmailInput:
+      type: object
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        currentPassword: { type: string, minLength: 1, maxLength: 128 }
+      required: [email, currentPassword]
     UserProfile:
       type: object
       properties:
@@ -617,7 +858,21 @@ components:
         phone: { type: ["string", "null"] }
         timezone: { type: string }
         notes: { type: ["string", "null"] }
-      required: [id, email, name, phone, timezone, notes]
+        emailVerified: { type: boolean }
+        pendingEmail: { type: ["string", "null"], format: email }
+        consultationAvailable: { type: boolean }
+      required:
+        [
+          id,
+          email,
+          name,
+          phone,
+          timezone,
+          notes,
+          emailVerified,
+          pendingEmail,
+          consultationAvailable,
+        ]
     ProfileUpdate:
       type: object
       properties:
@@ -638,6 +893,12 @@ components:
         durationMin: { type: integer }
         status: { $ref: "#/components/schemas/AppointmentStatus" }
         notes: { type: ["string", "null"] }
+        amountCents: { type: ["integer", "null"] }
+        currency: { type: string }
+        paymentStatus:
+          type: string
+          enum: [not_required, pending, paid, refunded, failed]
+        paymentExpiresAt: { type: ["string", "null"], format: date-time }
       required:
         [
           id,
@@ -650,6 +911,10 @@ components:
           durationMin,
           status,
           notes,
+          amountCents,
+          currency,
+          paymentStatus,
+          paymentExpiresAt,
         ]
     AppointmentInput:
       type: object
@@ -658,9 +923,28 @@ components:
         startTime: { type: string, format: date-time }
         endTime: { type: string, format: date-time }
         serviceType: { $ref: "#/components/schemas/ServiceType" }
-        durationMin: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+        durationMin: { type: integer, enum: [15, 30, 45, 50, 60, 80, 90, 120] }
         notes: { type: ["string", "null"] }
       required: [clientId, startTime, endTime, serviceType, durationMin]
+    BookingResult:
+      type: object
+      properties:
+        appointment: { $ref: "#/components/schemas/Appointment" }
+        checkoutUrl: { type: ["string", "null"], format: uri }
+      required: [appointment, checkoutUrl]
+    CheckoutResult:
+      type: object
+      properties:
+        checkoutUrl: { type: string, format: uri }
+      required: [checkoutUrl]
+    MeetingAccess:
+      type: object
+      properties:
+        available: { type: boolean }
+        joinUrl: { type: ["string", "null"], format: uri }
+        availableFrom: { type: string, format: date-time }
+        availableUntil: { type: string, format: date-time }
+      required: [available, joinUrl, availableFrom, availableUntil]
     AppointmentUpdate:
       type: object
       properties:
@@ -707,7 +991,22 @@ components:
         settings:
           type: object
           additionalProperties: { type: number }
-      required: [timezone, settings]
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServicePrice"
+        paymentsConfigured: { type: boolean }
+        emailConfigured: { type: boolean }
+        meetingConfigured: { type: boolean }
+      required:
+        [
+          timezone,
+          settings,
+          prices,
+          paymentsConfigured,
+          emailConfigured,
+          meetingConfigured,
+        ]
     ClientDashboard:
       type: object
       properties:
@@ -835,6 +1134,16 @@ components:
               { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
           required: [couples, individual, child_teen, christian_counseling]
       required: [bufferMin, defaultDurations]
+    ServicePrice:
+      type: object
+      properties:
+        serviceType:
+          type: string
+          enum: [couples, individual, child_teen, christian_counseling]
+        durationMin: { type: integer, enum: [30, 45, 50, 60, 80, 90, 120] }
+        amountCents: { type: integer, minimum: 50, maximum: 1000000 }
+        active: { type: boolean }
+      required: [serviceType, durationMin, amountCents, active]
     BlockedTimeInput:
       type: object
       properties:

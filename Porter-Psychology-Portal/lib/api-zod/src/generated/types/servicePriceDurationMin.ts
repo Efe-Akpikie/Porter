@@ -6,11 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AppointmentInputDurationMin = typeof AppointmentInputDurationMin[keyof typeof AppointmentInputDurationMin];
+export type ServicePriceDurationMin = typeof ServicePriceDurationMin[keyof typeof ServicePriceDurationMin];
 
 
-export const AppointmentInputDurationMin = {
-  NUMBER_15: 15,
+export const ServicePriceDurationMin = {
   NUMBER_30: 30,
   NUMBER_45: 45,
   NUMBER_50: 50,

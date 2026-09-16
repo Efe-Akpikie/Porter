@@ -6,6 +6,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { stripeWebhook } from "./lib/payments";
 
 const app: Express = express();
 
@@ -37,6 +38,11 @@ app.use(
     origin: process.env.CORS_ORIGIN || undefined,
     credentials: true,
   }),
+);
+app.post(
+  "/api/payments/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhook,
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

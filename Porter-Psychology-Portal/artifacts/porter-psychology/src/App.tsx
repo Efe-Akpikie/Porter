@@ -28,6 +28,7 @@ import {
   CloudSun,
   HeartHandshake,
   Home,
+  KeyRound,
   LogOut,
   Menu,
   MoreHorizontal,
@@ -48,6 +49,7 @@ import {
   getGetAdminClientsQueryKey,
   getGetAdminSummaryQueryKey,
   getGetAdminSettingsQueryKey,
+  getGetAdminPricesQueryKey,
   getGetAdminWaitlistQueryKey,
   getGetAvailabilityQueryKey,
   getGetBlockedTimesQueryKey,
@@ -55,11 +57,14 @@ import {
   getGetClientDashboardQueryKey,
   getGetClientProfileQueryKey,
   getGetCurrentUserQueryKey,
+  getGetAppointmentMeetingQueryKey,
   getGetPublicSlotsQueryKey,
+  getGetPublicPracticeQueryKey,
   useCancelClientAppointment,
   useBulkUpdateAdminAppointments,
   useConvertWaitlistEntry,
   useCreateAppointment,
+  useCreateAppointmentCheckout,
   useCreateBlockedTime,
   useCreateClientNote,
   useCreateWaitlistEntry,
@@ -70,6 +75,7 @@ import {
   useGetAdminClients,
   useGetAdminSummary,
   useGetAdminSettings,
+  useGetAdminPrices,
   useGetAdminWaitlist,
   useGetAvailability,
   useGetBlockedTimes,
@@ -77,14 +83,25 @@ import {
   useGetClientDashboard,
   useGetClientProfile,
   useGetCurrentUser,
+  useGetAppointmentMeeting,
   useGetPublicSlots,
   useGetPublicPractice,
   useHealthCheck,
   useLogin,
   useLogout,
   useRegister,
+  useResendVerification,
+  useVerifyEmail,
+  useVerifyEmailChange,
+  useForgotPassword,
+  useResetPassword,
+  useChangePassword,
+  useChangeEmail,
+  useRefundAdminAppointment,
+  useRestoreClientConsultation,
   useUpdateAdminAppointment,
   useUpdateAdminSettings,
+  useUpdateAdminPrices,
   useUpdateAvailability,
   useUpdateBlockedTime,
   useUpdateClientProfile,
@@ -94,6 +111,7 @@ import type {
   AppointmentStatus,
   BlockedTime,
   PracticeSettings,
+  ServicePrice,
   ServiceType,
   WaitlistEntry,
 } from "@workspace/api-client-react";
@@ -104,14 +122,23 @@ import { Calendar } from "@/components/ui/calendar";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
-const durationOptions = [30, 45, 50, 60, 80, 90, 120] as const;
+const durationOptions = [15, 30, 45, 50, 60, 80, 90, 120] as const;
+const paidDurationOptions = [30, 45, 50, 60, 80, 90, 120] as const;
+const paidServiceTypes = [
+  "couples",
+  "individual",
+  "child_teen",
+  "christian_counseling",
+] as const;
 const serviceColors: Record<ServiceType, string> = {
+  consultation: "#4f7f72",
   couples: "#6b8cae",
   individual: "#8ba888",
   child_teen: "#c4956a",
   christian_counseling: "#8b78a6",
 };
 const serviceNames: Record<string, string> = {
+  consultation: "Free introductory consultation",
   couples: "Couples therapy",
   individual: "Individual therapy",
   child_teen: "Child & teen support",
@@ -475,22 +502,22 @@ function Landing() {
           <div className="space-y-7 text-muted-foreground">
             <div className="space-y-5 leading-7">
               <p>
-                Lara Akinpelu, MS, is a Registered Provisional Psychologist
-                with the College of Alberta Psychologists. She holds a
-                master&apos;s degree in General Psychology from Walden
-                University in Minneapolis, Minnesota, and has completed the
-                core counseling psychology coursework required for
-                provisional registration in Alberta. She has also completed
-                1,600 hours of supervised practice.
+                Lara Akinpelu, MS, is a Registered Provisional Psychologist with
+                the College of Alberta Psychologists. She holds a master&apos;s
+                degree in General Psychology from Walden University in
+                Minneapolis, Minnesota, and has completed the core counseling
+                psychology coursework required for provisional registration in
+                Alberta. She has also completed 1,600 hours of supervised
+                practice.
               </p>
               <p>
-                Lara is passionate about working with couples and believes
-                that healthy relationships help nurture emotionally stable
-                children, strong families, and healthy communities. In her
-                pursuit of further training in couples counseling, she
-                completed Levels 1 and 2 of Gottman Couples Therapy training.
-                She has also completed Beck Cognitive Behavior Therapy
-                training focused on depression and suicide prevention.
+                Lara is passionate about working with couples and believes that
+                healthy relationships help nurture emotionally stable children,
+                strong families, and healthy communities. In her pursuit of
+                further training in couples counseling, she completed Levels 1
+                and 2 of Gottman Couples Therapy training. She has also
+                completed Beck Cognitive Behavior Therapy training focused on
+                depression and suicide prevention.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -499,8 +526,8 @@ function Landing() {
                   Education & certifications
                 </p>
                 <p className="mt-3 leading-7">
-                  MS, General Psychology · Gottman Couples Therapy, Levels 1
-                  and 2 · Beck Cognitive Behavior Therapy training · Certified
+                  MS, General Psychology · Gottman Couples Therapy, Levels 1 and
+                  2 · Beck Cognitive Behavior Therapy training · Certified
                   Autism Specialist
                 </p>
                 <a
@@ -761,6 +788,12 @@ function Login() {
                 placeholder="Your password"
                 className="mt-2 w-full rounded-xl border border-input bg-card px-4 py-3 text-sm"
               />
+              <Link
+                href="/forgot-password"
+                className="mt-2 block text-right text-xs font-semibold text-primary hover:underline"
+              >
+                Forgot password?
+              </Link>
             </label>
             {login.isError && (
               <p className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
@@ -866,7 +899,10 @@ function Register() {
             />
           </label>
           <label className="block text-sm font-semibold sm:col-span-2">
-            Phone <span className="font-normal text-muted-foreground">(optional)</span>
+            Phone{" "}
+            <span className="font-normal text-muted-foreground">
+              (optional)
+            </span>
             <input
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
@@ -881,7 +917,7 @@ function Register() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               type="password"
-              minLength={8}
+              minLength={12}
               required
               autoComplete="new-password"
               className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
@@ -893,7 +929,7 @@ function Register() {
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}
               type="password"
-              minLength={8}
+              minLength={12}
               required
               autoComplete="new-password"
               className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
@@ -920,11 +956,274 @@ function Register() {
         </form>
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link href="/login" className="font-semibold text-primary hover:underline">
+          <Link
+            href="/login"
+            className="font-semibold text-primary hover:underline"
+          >
             Sign in
           </Link>
         </p>
       </div>
+    </div>
+  );
+}
+
+function ForgotPassword() {
+  const forgot = useForgotPassword();
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  return (
+    <div className="texture flex min-h-[100dvh] items-center justify-center px-5">
+      <Card className="w-full max-w-md p-8">
+        <Logo />
+        <h1 className="display mt-10 text-4xl">Reset your password.</h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          Enter your account email. If it exists, we will send a secure reset
+          link.
+        </p>
+        {sent ? (
+          <p className="mt-7 rounded-xl bg-primary/10 p-4 text-sm text-primary">
+            Check your email for the reset link.
+          </p>
+        ) : (
+          <form
+            className="mt-7"
+            onSubmit={(event) => {
+              event.preventDefault();
+              forgot.mutate(
+                { data: { email } },
+                { onSuccess: () => setSent(true) },
+              );
+            }}
+          >
+            <label className="text-sm font-semibold">
+              Email
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-input px-4 py-3"
+              />
+            </label>
+            <Button className="mt-5 w-full" disabled={forgot.isPending}>
+              {forgot.isPending ? "Sending…" : "Send reset link"}
+            </Button>
+          </form>
+        )}
+        <Link href="/login" className="mt-6 inline-block text-sm text-primary">
+          Return to sign in
+        </Link>
+      </Card>
+    </div>
+  );
+}
+
+function ResetPassword() {
+  const reset = useResetPassword();
+  const [, setLocation] = useLocation();
+  const token = new URLSearchParams(window.location.search).get("token") ?? "";
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  return (
+    <div className="texture flex min-h-[100dvh] items-center justify-center px-5">
+      <Card className="w-full max-w-md p-8">
+        <Logo />
+        <h1 className="display mt-10 text-4xl">Choose a new password.</h1>
+        <form
+          className="mt-7 space-y-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (password !== confirmation) return;
+            reset.mutate(
+              { data: { token, password } },
+              { onSuccess: () => setLocation("/login") },
+            );
+          }}
+        >
+          <label className="block text-sm font-semibold">
+            New password
+            <input
+              type="password"
+              minLength={12}
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-input px-4 py-3"
+            />
+          </label>
+          <label className="block text-sm font-semibold">
+            Confirm password
+            <input
+              type="password"
+              minLength={12}
+              required
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-input px-4 py-3"
+            />
+          </label>
+          {password !== confirmation && confirmation && (
+            <p className="text-sm text-destructive">Passwords do not match.</p>
+          )}
+          {reset.isError && (
+            <p className="text-sm text-destructive">{reset.error.message}</p>
+          )}
+          <Button
+            className="w-full"
+            disabled={!token || password !== confirmation || reset.isPending}
+          >
+            Reset password
+          </Button>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+function VerifyEmail() {
+  const verify = useVerifyEmail();
+  const [, setLocation] = useLocation();
+  const started = useRef(false);
+  const token = new URLSearchParams(window.location.search).get("token") ?? "";
+  useEffect(() => {
+    if (!token || started.current) return;
+    started.current = true;
+    verify.mutate(
+      { data: { token } },
+      {
+        onSuccess: (user) => {
+          queryClient.setQueryData(getGetCurrentUserQueryKey(), user);
+          setLocation("/client");
+        },
+      },
+    );
+  }, [setLocation, token, verify]);
+  return (
+    <TokenStatus pending={verify.isPending} error={verify.isError || !token} />
+  );
+}
+
+function VerifyEmailChange() {
+  const verify = useVerifyEmailChange();
+  const [, setLocation] = useLocation();
+  const started = useRef(false);
+  const token = new URLSearchParams(window.location.search).get("token") ?? "";
+  useEffect(() => {
+    if (!token || started.current) return;
+    started.current = true;
+    verify.mutate(
+      { data: { token } },
+      {
+        onSuccess: (user) => {
+          queryClient.setQueryData(getGetCurrentUserQueryKey(), user);
+          setLocation("/client/profile");
+        },
+      },
+    );
+  }, [setLocation, token, verify]);
+  return (
+    <TokenStatus pending={verify.isPending} error={verify.isError || !token} />
+  );
+}
+
+function TokenStatus({ pending, error }: { pending: boolean; error: boolean }) {
+  return (
+    <div className="texture flex min-h-[100dvh] items-center justify-center px-5">
+      <Card className="w-full max-w-md p-8 text-center">
+        <Logo />
+        <h1 className="display mt-10 text-4xl">
+          {error
+            ? "This link could not be verified."
+            : "Verifying your account…"}
+        </h1>
+        {pending && <Skeleton className="mx-auto mt-6 h-3 w-2/3" />}
+        {error && (
+          <Link
+            href="/login"
+            className="mt-6 inline-block text-sm text-primary"
+          >
+            Return to sign in
+          </Link>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function VerificationBanner() {
+  const user = useGetCurrentUser().data;
+  const resend = useResendVerification();
+  const [sent, setSent] = useState(false);
+  if (!user || user.emailVerified) return null;
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-secondary/30 bg-[#f7f0e5] p-4 text-sm">
+      <p>
+        Verify <strong>{user.email}</strong> before booking an appointment.
+      </p>
+      <Button
+        variant="outline"
+        disabled={resend.isPending || sent}
+        onClick={() =>
+          resend.mutate(undefined, { onSuccess: () => setSent(true) })
+        }
+      >
+        {sent ? "Verification sent" : "Resend verification"}
+      </Button>
+    </div>
+  );
+}
+
+function IdleSessionGuard() {
+  const { mutate: logout } = useLogout();
+  const { refetch: refreshSession } = useGetCurrentUser({
+    query: { queryKey: getGetCurrentUserQueryKey(), retry: false },
+  });
+  const [, setLocation] = useLocation();
+  const [warning, setWarning] = useState(false);
+  const lastActivity = useRef(Date.now());
+  useEffect(() => {
+    let warningTimer: ReturnType<typeof setTimeout>;
+    let logoutTimer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      lastActivity.current = Date.now();
+      setWarning(false);
+      clearTimeout(warningTimer);
+      clearTimeout(logoutTimer);
+      warningTimer = setTimeout(() => setWarning(true), 9 * 60_000);
+      logoutTimer = setTimeout(
+        () =>
+          logout(undefined, {
+            onSettled: () => {
+              queryClient.clear();
+              setLocation("/login");
+            },
+          }),
+        10 * 60_000,
+      );
+    };
+    const events = ["click", "keydown", "scroll", "touchstart"] as const;
+    events.forEach((event) =>
+      window.addEventListener(event, reset, { passive: true }),
+    );
+    const heartbeat = setInterval(() => {
+      if (Date.now() - lastActivity.current < 10 * 60_000) {
+        void refreshSession();
+      }
+    }, 4 * 60_000);
+    reset();
+    return () => {
+      events.forEach((event) => window.removeEventListener(event, reset));
+      clearTimeout(warningTimer);
+      clearTimeout(logoutTimer);
+      clearInterval(heartbeat);
+    };
+  }, [logout, refreshSession, setLocation]);
+  if (!warning) return null;
+  return (
+    <div className="fixed inset-x-4 bottom-4 z-[100] mx-auto max-w-md rounded-2xl bg-foreground p-4 text-sm text-background shadow-xl">
+      Your session will end in one minute due to inactivity. Interact with the
+      page to stay signed in.
     </div>
   );
 }
@@ -942,6 +1241,7 @@ function ClientShell({ children }: { children: ReactNode }) {
   ];
   return (
     <div className="app-shell texture lg:grid lg:grid-cols-[250px_1fr]">
+      <IdleSessionGuard />
       <aside
         className={`${open ? "flex" : "hidden"} fixed inset-y-0 left-0 z-30 w-[250px] flex-col bg-sidebar p-5 text-sidebar-foreground lg:static lg:flex`}
       >
@@ -1017,7 +1317,10 @@ function ClientShell({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
-        <main className="mx-auto max-w-7xl p-5 lg:p-10">{children}</main>
+        <main className="mx-auto max-w-7xl p-5 lg:p-10">
+          <VerificationBanner />
+          {children}
+        </main>
       </div>
     </div>
   );
@@ -1186,6 +1489,29 @@ function Booking() {
     "morning" | "afternoon" | "evening"
   >("afternoon");
   const practice = useGetPublicPractice();
+  const profile = useGetClientProfile();
+  const currentUser = useGetCurrentUser().data;
+  const paidDurations =
+    practice.data?.prices
+      .filter((price) => price.serviceType === service && price.active)
+      .map((price) => price.durationMin) ?? [];
+  const selectableDurations = service === "consultation" ? [15] : paidDurations;
+  const selectedPrice = practice.data?.prices.find(
+    (price) =>
+      price.serviceType === service &&
+      price.durationMin === duration &&
+      price.active,
+  );
+  useEffect(() => {
+    if (
+      service !== "consultation" &&
+      selectableDurations.length &&
+      !selectableDurations.includes(duration as never)
+    ) {
+      setDuration(selectableDurations[0]);
+      setSelected("");
+    }
+  }, [duration, selectableDurations, service]);
   const slots = useGetPublicSlots(
     { date, duration: duration as 30 | 45 | 50 | 60 | 80 | 90 | 120 },
     {
@@ -1222,12 +1548,17 @@ function Booking() {
         } as never,
       },
       {
-        onSuccess: () => {
-          setConfirmed(true);
+        onSuccess: (result) => {
           void invalidate(
             getGetClientDashboardQueryKey(),
             getGetClientAppointmentsQueryKey(),
+            getGetClientProfileQueryKey(),
           );
+          if (result.checkoutUrl) {
+            window.location.assign(result.checkoutUrl);
+          } else {
+            setConfirmed(true);
+          }
         },
       },
     );
@@ -1263,8 +1594,8 @@ function Booking() {
           </div>
           <h2 className="display mt-6 text-4xl">You are on the calendar.</h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
-            Your session has been added. Notification delivery is not connected
-            yet.
+            Your free consultation is confirmed. Check your email for the
+            appointment confirmation.
           </p>
           <Link
             href="/client/appointments"
@@ -1284,19 +1615,47 @@ function Booking() {
                   key={value}
                   onClick={() => {
                     const nextService = value as ServiceType;
+                    if (
+                      nextService === "consultation" &&
+                      profile.data?.consultationAvailable === false
+                    )
+                      return;
                     setService(nextService);
+                    if (nextService === "consultation") {
+                      setDuration(15);
+                      setSelected("");
+                      return;
+                    }
                     const settingKey = `default_${nextService}_duration`;
                     const nextDuration = practice.data?.settings?.[settingKey];
-                    if (nextDuration) setDuration(nextDuration);
+                    const prices =
+                      practice.data?.prices.filter(
+                        (price) =>
+                          price.serviceType === nextService && price.active,
+                      ) ?? [];
+                    if (
+                      nextDuration &&
+                      prices.some((price) => price.durationMin === nextDuration)
+                    )
+                      setDuration(nextDuration);
+                    else if (prices[0]) setDuration(prices[0].durationMin);
                     setSelected("");
                   }}
-                  className={`flex w-full items-start justify-between rounded-xl border p-4 text-left transition ${service === value ? "border-primary bg-primary/10" : "border-border hover:bg-muted"}`}
+                  disabled={
+                    value === "consultation" &&
+                    profile.data?.consultationAvailable === false
+                  }
+                  className={`flex w-full items-start justify-between rounded-xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${service === value ? "border-primary bg-primary/10" : "border-border hover:bg-muted"}`}
                   data-testid={`button-service-${value}`}
                 >
                   <span>
                     <span className="block text-sm font-semibold">{label}</span>
                     <span className="mt-1 block text-xs text-muted-foreground">
-                      {serviceDescription(value)}
+                      {value === "consultation"
+                        ? profile.data?.consultationAvailable === false
+                          ? "Your one-time introductory consultation has been used."
+                          : "A one-time 15-minute introductory call for new clients."
+                        : serviceDescription(value)}
                     </span>
                   </span>
                   {service === value && (
@@ -1315,12 +1674,31 @@ function Booking() {
               className="mt-4 w-full rounded-xl border border-input bg-card px-4 py-3 text-sm"
               data-testid="select-duration"
             >
-              {durationOptions.map((min) => (
+              {selectableDurations.map((min) => (
                 <option key={min} value={min}>
                   {min} minutes
+                  {service !== "consultation" &&
+                    (() => {
+                      const price = practice.data?.prices.find(
+                        (item) =>
+                          item.serviceType === service &&
+                          item.durationMin === min,
+                      );
+                      return price
+                        ? ` — ${new Intl.NumberFormat("en-CA", {
+                            style: "currency",
+                            currency: "CAD",
+                          }).format(price.amountCents / 100)}`
+                        : "";
+                    })()}
                 </option>
               ))}
             </select>
+            {service !== "consultation" && !selectableDurations.length && (
+              <p className="mt-3 text-xs text-destructive">
+                Pricing for this service has not been configured yet.
+              </p>
+            )}
           </Card>
           <Card className="p-6">
             <StepLabel n="03" label="Find a time" />
@@ -1391,23 +1769,32 @@ function Booking() {
             <div className="mt-8 border-t border-border pt-5">
               <Button
                 onClick={book}
-                disabled={!selected || create.isPending}
+                disabled={
+                  !selected ||
+                  create.isPending ||
+                  !currentUser?.emailVerified ||
+                  (service !== "consultation" && !selectedPrice)
+                }
                 className="w-full"
                 data-testid="button-confirm-booking"
               >
                 {create.isPending
                   ? "Saving your time…"
                   : selected
-                    ? `Confirm ${fmtDate(selected)} at ${fmtTime(selected)}`
+                    ? service === "consultation"
+                      ? `Confirm free consultation on ${fmtDate(selected)}`
+                      : `Continue to payment`
                     : "Choose a time to continue"}
               </Button>
-              <button
-                onClick={() => setWaitlistOpen(true)}
-                className="mt-4 w-full text-center text-xs font-semibold text-secondary underline-offset-4 hover:underline"
-                data-testid="button-join-waitlist"
-              >
-                Prefer another time? Join the waitlist
-              </button>
+              {service !== "consultation" && (
+                <button
+                  onClick={() => setWaitlistOpen(true)}
+                  className="mt-4 w-full text-center text-xs font-semibold text-secondary underline-offset-4 hover:underline"
+                  data-testid="button-join-waitlist"
+                >
+                  Prefer another time? Join the waitlist
+                </button>
+              )}
             </div>
             {waitlistOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 p-5">
@@ -1441,9 +1828,9 @@ function Booking() {
                       }
                       className="mt-2 w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm"
                     >
-                      {Object.entries(serviceNames).map(([value, label]) => (
+                      {paidServiceTypes.map((value) => (
                         <option key={value} value={value}>
-                          {label}
+                          {serviceNames[value]}
                         </option>
                       ))}
                     </select>
@@ -1488,10 +1875,96 @@ function StepLabel({ n, label }: { n: string; label: string }) {
     </div>
   );
 }
-function ClientAppointments() {
-  const q = useGetClientAppointments();
+
+function ClientAppointmentActions({
+  item,
+  onCancelled,
+}: {
+  item: Appointment;
+  onCancelled: () => void;
+}) {
   const cancel = useCancelClientAppointment();
-  const [notice, setNotice] = useState("");
+  const checkout = useCreateAppointmentCheckout();
+  const meetingWindowRelevant =
+    item.status === "confirmed" &&
+    new Date(item.startTime).getTime() <= Date.now() + 24 * 60 * 60_000 &&
+    new Date(item.endTime).getTime() + 30 * 60_000 >= Date.now();
+  const meeting = useGetAppointmentMeeting(item.id, {
+    query: {
+      queryKey: getGetAppointmentMeetingQueryKey(item.id),
+      enabled: meetingWindowRelevant,
+      refetchInterval: meetingWindowRelevant ? 60_000 : false,
+    },
+  });
+  if (item.status === "pending_payment") {
+    return (
+      <Button
+        onClick={() =>
+          checkout.mutate(
+            { id: item.id },
+            {
+              onSuccess: ({ checkoutUrl }) =>
+                window.location.assign(checkoutUrl),
+            },
+          )
+        }
+        disabled={checkout.isPending}
+      >
+        Complete payment
+      </Button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {meeting.data?.available && meeting.data.joinUrl && (
+        <a
+          href={meeting.data.joinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"
+        >
+          Join session
+        </a>
+      )}
+      {item.status !== "cancelled" && new Date(item.startTime) > new Date() && (
+        <Button
+          variant="outline"
+          onClick={() => {
+            if (confirm("Cancel this appointment?"))
+              cancel.mutate({ id: item.id }, { onSuccess: onCancelled });
+          }}
+          data-testid={`button-cancel-${item.id}`}
+        >
+          Cancel
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ClientAppointments() {
+  const paymentResult = new URLSearchParams(window.location.search).get(
+    "payment",
+  );
+  const [pollPayment, setPollPayment] = useState(paymentResult === "success");
+  const q = useGetClientAppointments({
+    query: {
+      queryKey: getGetClientAppointmentsQueryKey(),
+      refetchInterval: pollPayment ? 3000 : false,
+    },
+  });
+  useEffect(() => {
+    if (!pollPayment) return;
+    const timeout = setTimeout(() => setPollPayment(false), 30_000);
+    return () => clearTimeout(timeout);
+  }, [pollPayment]);
+  const [notice, setNotice] = useState(
+    paymentResult === "success"
+      ? "Payment received. Your appointment will be confirmed shortly."
+      : paymentResult === "cancelled"
+        ? "Payment was not completed. Your slot remains reserved briefly."
+        : "",
+  );
   const items = q.data ?? [];
   return (
     <ClientShell>
@@ -1566,32 +2039,35 @@ function ClientAppointments() {
                   >
                     {titleCase(item.status)}
                   </Badge>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {item.serviceType === "consultation"
+                      ? "Free consultation"
+                      : item.paymentStatus === "paid"
+                        ? item.status === "cancelled"
+                          ? "Paid · refund reviewed manually"
+                          : "Paid"
+                        : item.paymentStatus === "refunded"
+                          ? "Refunded"
+                          : item.paymentStatus === "pending"
+                            ? `Payment pending${
+                                item.paymentExpiresAt
+                                  ? ` · reserved until ${fmtTime(item.paymentExpiresAt)}`
+                                  : ""
+                              }`
+                            : ""}
+                  </p>
                 </div>
               </div>
-              {item.status !== "cancelled" &&
-                new Date(item.startTime) > new Date() && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (confirm("Cancel this appointment?"))
-                        cancel.mutate(
-                          { id: item.id },
-                          {
-                            onSuccess: () => {
-                              setNotice("Your appointment has been cancelled.");
-                              void invalidate(
-                                getGetClientAppointmentsQueryKey(),
-                                getGetClientDashboardQueryKey(),
-                              );
-                            },
-                          },
-                        );
-                    }}
-                    data-testid={`button-cancel-${item.id}`}
-                  >
-                    Cancel
-                  </Button>
-                )}
+              <ClientAppointmentActions
+                item={item}
+                onCancelled={() => {
+                  setNotice("Your appointment has been cancelled.");
+                  void invalidate(
+                    getGetClientAppointmentsQueryKey(),
+                    getGetClientDashboardQueryKey(),
+                  );
+                }}
+              />
             </Card>
           ))}
         </div>
@@ -1602,18 +2078,23 @@ function ClientAppointments() {
 function ClientProfile() {
   const q = useGetClientProfile();
   const update = useUpdateClientProfile();
+  const changePassword = useChangePassword();
+  const changeEmail = useChangeEmail();
   const profile = q.data;
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [timezone, setTimezone] = useState("America/Edmonton");
-  const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [accountNotice, setAccountNotice] = useState("");
   useEffect(() => {
     if (profile) {
       setName(profile.name);
       setPhone(profile.phone ?? "");
       setTimezone(profile.timezone);
-      setNotes(profile.notes ?? "");
     }
   }, [profile]);
   return (
@@ -1670,16 +2151,6 @@ function ClientProfile() {
                   <option>America/Toronto</option>
                 </select>
               </label>
-              <label className="text-sm font-semibold sm:col-span-2">
-                Notes
-                <textarea
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  className="mt-2 min-h-28 w-full rounded-xl border border-input bg-card px-4 py-3 text-sm"
-                  placeholder="Anything you would like the practice to know"
-                  data-testid="textarea-profile-notes"
-                />
-              </label>
             </div>
             {saved && (
               <p className="mt-5 text-sm text-primary">
@@ -1695,7 +2166,6 @@ function ClientProfile() {
                       name,
                       phone: phone || null,
                       timezone,
-                      notes: notes || null,
                     },
                   },
                   {
@@ -1711,6 +2181,121 @@ function ClientProfile() {
             >
               {update.isPending ? "Saving…" : "Save details"}
             </Button>
+          </Card>
+          <Card className="p-6 sm:p-8 lg:col-span-2">
+            <p className="mono text-[10px] uppercase tracking-[.2em] text-secondary">
+              Account security
+            </p>
+            {accountNotice && (
+              <p className="mt-4 rounded-xl bg-primary/10 p-3 text-sm text-primary">
+                {accountNotice}
+              </p>
+            )}
+            <div className="mt-5 grid gap-8 md:grid-cols-2">
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  changePassword.mutate(
+                    {
+                      data: {
+                        currentPassword,
+                        newPassword,
+                      },
+                    },
+                    {
+                      onSuccess: () => {
+                        setCurrentPassword("");
+                        setNewPassword("");
+                        setAccountNotice("Your password has been changed.");
+                      },
+                    },
+                  );
+                }}
+              >
+                <h2 className="font-semibold">Change password</h2>
+                <input
+                  type="password"
+                  required
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  placeholder="Current password"
+                  className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+                />
+                <input
+                  type="password"
+                  required
+                  minLength={12}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="New password (12+ characters)"
+                  className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+                />
+                {changePassword.isError && (
+                  <p className="text-sm text-destructive">
+                    {changePassword.error.message}
+                  </p>
+                )}
+                <Button disabled={changePassword.isPending}>
+                  Update password
+                </Button>
+              </form>
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  changeEmail.mutate(
+                    {
+                      data: {
+                        email: newEmail,
+                        currentPassword: emailPassword,
+                      },
+                    },
+                    {
+                      onSuccess: () => {
+                        setNewEmail("");
+                        setEmailPassword("");
+                        setAccountNotice(
+                          "Check your new email address to confirm the change.",
+                        );
+                        void invalidate(getGetCurrentUserQueryKey());
+                      },
+                    },
+                  );
+                }}
+              >
+                <h2 className="font-semibold">Change email</h2>
+                <input
+                  type="email"
+                  required
+                  value={newEmail}
+                  onChange={(event) => setNewEmail(event.target.value)}
+                  placeholder="New email address"
+                  className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+                />
+                <input
+                  type="password"
+                  required
+                  value={emailPassword}
+                  onChange={(event) => setEmailPassword(event.target.value)}
+                  placeholder="Current password"
+                  className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+                />
+                {profile?.pendingEmail && (
+                  <p className="text-xs text-muted-foreground">
+                    Pending confirmation: {profile.pendingEmail}
+                  </p>
+                )}
+                {changeEmail.isError && (
+                  <p className="text-sm text-destructive">
+                    {changeEmail.error.message}
+                  </p>
+                )}
+                <Button disabled={changeEmail.isPending}>
+                  Send confirmation
+                </Button>
+              </form>
+            </div>
           </Card>
           <Card className="bg-[#dfe8df] p-6">
             <ShieldCheck className="text-primary" />
@@ -1740,6 +2325,7 @@ function AdminShell({ children }: { children: ReactNode }) {
   ];
   return (
     <div className="app-shell texture lg:grid lg:grid-cols-[250px_1fr]">
+      <IdleSessionGuard />
       <aside
         className={`${open ? "flex" : "hidden"} fixed inset-y-0 left-0 z-30 w-[250px] flex-col bg-sidebar p-5 text-sidebar-foreground lg:static lg:flex`}
       >
@@ -1792,6 +2378,12 @@ function AdminShell({ children }: { children: ReactNode }) {
             data-testid="link-admin-blocked"
           >
             <ShieldCheck size={17} /> Blocked times
+          </Link>
+          <Link
+            href="/admin/account"
+            className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent"
+          >
+            <KeyRound size={17} /> Account security
           </Link>
           <button
             onClick={() => {
@@ -2074,6 +2666,10 @@ function AdminCalendar() {
     const appointment = info.event.extendedProps.appointment as
       Appointment | undefined;
     if (!appointment || !info.event.start || !info.event.end) return;
+    if (appointment.serviceType === "consultation") {
+      info.revert();
+      return;
+    }
     update.mutate(
       {
         id: appointment.id,
@@ -2096,7 +2692,9 @@ function AdminCalendar() {
       (info.event.end.getTime() - info.event.start.getTime()) / 60000,
     );
     if (
-      !durationOptions.includes(durationMin as (typeof durationOptions)[number])
+      !paidDurationOptions.includes(
+        durationMin as (typeof paidDurationOptions)[number],
+      )
     ) {
       info.revert();
       return;
@@ -2107,7 +2705,7 @@ function AdminCalendar() {
         data: {
           startTime: info.event.start.toISOString(),
           endTime: info.event.end.toISOString(),
-          durationMin: durationMin as (typeof durationOptions)[number],
+          durationMin: durationMin as (typeof paidDurationOptions)[number],
         },
       },
       {
@@ -2361,7 +2959,11 @@ function AdminCalendar() {
                 Service
                 <select
                   value={service}
-                  onChange={(e) => setService(e.target.value as ServiceType)}
+                  onChange={(e) => {
+                    const next = e.target.value as ServiceType;
+                    setService(next);
+                    setDuration(next === "consultation" ? 15 : 50);
+                  }}
                   className="mt-2 w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm"
                 >
                   {Object.entries(serviceNames).map(([value, label]) => (
@@ -2378,13 +2980,14 @@ function AdminCalendar() {
                   onChange={(e) => setDuration(Number(e.target.value))}
                   className="mt-2 w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm"
                 >
-                  <option value={30}>30 minutes</option>
-                  <option value={45}>45 minutes</option>
-                  <option value={50}>50 minutes</option>
-                  <option value={60}>60 minutes</option>
-                  <option value={80}>80 minutes</option>
-                  <option value={90}>90 minutes</option>
-                  <option value={120}>120 minutes</option>
+                  {(service === "consultation"
+                    ? [15]
+                    : paidDurationOptions
+                  ).map((value) => (
+                    <option key={value} value={value}>
+                      {value} minutes
+                    </option>
+                  ))}
                 </select>
               </label>
               <Button
@@ -2509,13 +3112,16 @@ function AppointmentDrawer({
           </select>
         </label>
         <label className="mt-5 block text-sm font-semibold">
-          Private appointment notes
+          Scheduling notes
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             className="mt-2 min-h-28 w-full rounded-xl border border-input bg-card p-3 text-sm"
             placeholder="Notes visible only in the practitioner workspace"
           />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Coordination details only. Keep all clinical notes in Upheal.
+          </p>
         </label>
         <Button
           variant="outline"
@@ -2523,7 +3129,7 @@ function AppointmentDrawer({
           onClick={() => save({ notes: notes || null })}
           disabled={update.isPending}
         >
-          Save private notes
+          Save scheduling notes
         </Button>
         <div className="mt-6 grid grid-cols-3 gap-2">
           <Button variant="quiet" onClick={() => save({ status: "completed" })}>
@@ -2675,6 +3281,7 @@ function ClientDetail() {
     },
   });
   const addNote = useCreateClientNote();
+  const restoreConsultation = useRestoreClientConsultation();
   const [note, setNote] = useState("");
   const detail = q.data;
   return (
@@ -2699,6 +3306,28 @@ function ClientDetail() {
             <InfoRow label="Email" value={detail?.profile.email ?? "—"} />
             <InfoRow label="Phone" value={detail?.profile.phone ?? "—"} />
             <InfoRow label="Timezone" value={detail?.profile.timezone ?? "—"} />
+            <div className="sm:col-span-3">
+              <Button
+                variant="outline"
+                disabled={
+                  restoreConsultation.isPending ||
+                  detail?.profile.consultationAvailable
+                }
+                onClick={() =>
+                  restoreConsultation.mutate(
+                    { id: Number(id) },
+                    {
+                      onSuccess: () =>
+                        void invalidate(getGetAdminClientQueryKey(Number(id))),
+                    },
+                  )
+                }
+              >
+                {detail?.profile.consultationAvailable
+                  ? "Free consultation available"
+                  : "Restore free consultation eligibility"}
+              </Button>
+            </div>
           </Card>
           <div className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]">
             <Card className="p-6">
@@ -2731,7 +3360,10 @@ function ClientDetail() {
               )}
             </Card>
             <Card className="p-6">
-              <h2 className="display text-2xl">Private notes</h2>
+              <h2 className="display text-2xl">Scheduling notes</h2>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                Coordination details only. Keep clinical notes in Upheal.
+              </p>
               <div className="mt-5 space-y-3">
                 {detail?.notes?.map((item) => (
                   <div
@@ -2750,7 +3382,7 @@ function ClientDetail() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 className="mt-5 min-h-28 w-full rounded-xl border border-input bg-card p-3 text-sm"
-                placeholder="Add a private note…"
+                placeholder="Add a non-clinical scheduling note…"
               />
               <Button
                 className="mt-3"
@@ -2797,6 +3429,7 @@ function AdminAppointments() {
   const clients = useGetAdminClients({});
   const update = useUpdateAdminAppointment();
   const bulkUpdate = useBulkUpdateAdminAppointments();
+  const refund = useRefundAdminAppointment();
   const items = q.data ?? [];
   const refresh = () => {
     setSelectedIds([]);
@@ -2823,13 +3456,18 @@ function AdminAppointments() {
             className="rounded-xl border border-input bg-card px-3 py-2.5 text-sm"
           >
             <option value="">All statuses</option>
-            {["pending", "confirmed", "completed", "cancelled", "no_show"].map(
-              (value) => (
-                <option key={value} value={value}>
-                  {titleCase(value)}
-                </option>
-              ),
-            )}
+            {[
+              "pending_payment",
+              "pending",
+              "confirmed",
+              "completed",
+              "cancelled",
+              "no_show",
+            ].map((value) => (
+              <option key={value} value={value}>
+                {titleCase(value)}
+              </option>
+            ))}
           </select>
           <select
             value={clientId}
@@ -2915,6 +3553,18 @@ function AdminAppointments() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {a.paymentStatus === "paid" && (
+                  <Button
+                    variant="outline"
+                    disabled={refund.isPending}
+                    onClick={() => {
+                      if (confirm("Issue a full refund for this appointment?"))
+                        refund.mutate({ id: a.id }, { onSuccess: refresh });
+                    }}
+                  >
+                    Refund
+                  </Button>
+                )}
                 <Badge
                   tone={
                     a.status === "confirmed"
@@ -2941,6 +3591,7 @@ function AdminAppointments() {
                   data-testid={`select-admin-appointment-${a.id}`}
                 >
                   <option value="pending">Pending</option>
+                  <option value="pending_payment">Payment pending</option>
                   <option value="confirmed">Confirmed</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
@@ -3146,11 +3797,127 @@ function AdminWaitlist() {
     </AdminShell>
   );
 }
+
+function AdminAccount() {
+  const user = useGetCurrentUser().data;
+  const changePassword = useChangePassword();
+  const changeEmail = useChangeEmail();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [notice, setNotice] = useState("");
+  return (
+    <AdminShell>
+      <PageTitle
+        eyebrow="Account access"
+        title="Account security."
+        copy="Change the practitioner login without reusing deployment bootstrap secrets."
+      />
+      {notice && (
+        <p className="mb-5 rounded-xl bg-primary/10 p-4 text-sm text-primary">
+          {notice}
+        </p>
+      )}
+      <div className="grid gap-5 md:grid-cols-2">
+        <Card className="p-6">
+          <h2 className="display text-2xl">Change password</h2>
+          <form
+            className="mt-5 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              changePassword.mutate(
+                { data: { currentPassword, newPassword } },
+                {
+                  onSuccess: () => {
+                    setCurrentPassword("");
+                    setNewPassword("");
+                    setNotice(
+                      "Password changed and other sessions signed out.",
+                    );
+                  },
+                },
+              );
+            }}
+          >
+            <input
+              type="password"
+              required
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              placeholder="Current password"
+              className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+            />
+            <input
+              type="password"
+              required
+              minLength={12}
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="New password (12+ characters)"
+              className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+            />
+            <Button disabled={changePassword.isPending}>Change password</Button>
+          </form>
+        </Card>
+        <Card className="p-6">
+          <h2 className="display text-2xl">Change sign-in email</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Current email: {user?.email}
+          </p>
+          <form
+            className="mt-5 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              changeEmail.mutate(
+                {
+                  data: {
+                    email: newEmail,
+                    currentPassword: emailPassword,
+                  },
+                },
+                {
+                  onSuccess: () => {
+                    setNewEmail("");
+                    setEmailPassword("");
+                    setNotice("Confirmation sent to the new email address.");
+                  },
+                },
+              );
+            }}
+          >
+            <input
+              type="email"
+              required
+              value={newEmail}
+              onChange={(event) => setNewEmail(event.target.value)}
+              placeholder="New email address"
+              className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+            />
+            <input
+              type="password"
+              required
+              value={emailPassword}
+              onChange={(event) => setEmailPassword(event.target.value)}
+              placeholder="Current password"
+              className="w-full rounded-xl border border-input px-4 py-3 text-sm"
+            />
+            <Button disabled={changeEmail.isPending}>Send confirmation</Button>
+          </form>
+        </Card>
+      </div>
+    </AdminShell>
+  );
+}
+
 function AdminAvailability() {
   const q = useGetAvailability();
   const update = useUpdateAvailability();
   const settingsQuery = useGetAdminSettings();
   const updateSettings = useUpdateAdminSettings();
+  const pricesQuery = useGetAdminPrices();
+  const updatePrices = useUpdateAdminPrices();
+  const integrations = useGetPublicPractice();
   const defaults = [
     "Sunday",
     "Monday",
@@ -3177,6 +3944,7 @@ function AdminAvailability() {
       christian_counseling: 50,
     },
   });
+  const [priceDraft, setPriceDraft] = useState<ServicePrice[]>([]);
   useEffect(() => {
     if (q.data)
       setDraft(
@@ -3191,6 +3959,9 @@ function AdminAvailability() {
   useEffect(() => {
     if (settingsQuery.data) setSettings(settingsQuery.data);
   }, [settingsQuery.data]);
+  useEffect(() => {
+    if (pricesQuery.data) setPriceDraft(pricesQuery.data);
+  }, [pricesQuery.data]);
   const setDay = (
     dayOfWeek: number,
     patch: Partial<(typeof draft)[number]>,
@@ -3234,9 +4005,23 @@ function AdminAvailability() {
         }
       />
       <Card className="mb-5 p-5">
+        <h2 className="display text-2xl">Integration status</h2>
+        <div className="mt-4 flex flex-wrap gap-3">
+          {[
+            ["Resend email", integrations.data?.emailConfigured],
+            ["Stripe payments", integrations.data?.paymentsConfigured],
+            ["Upheal meeting", integrations.data?.meetingConfigured],
+          ].map(([label, configured]) => (
+            <Badge key={String(label)} tone={configured ? "sage" : "red"}>
+              {String(label)}: {configured ? "Connected" : "Not configured"}
+            </Badge>
+          ))}
+        </div>
+      </Card>
+      <Card className="mb-5 p-5">
         <h2 className="display text-2xl">Session defaults</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-5">
-          {(Object.keys(serviceNames) as ServiceType[]).map((service) => (
+          {paidServiceTypes.map((service) => (
             <label
               key={service}
               className="text-xs font-semibold text-muted-foreground"
@@ -3255,7 +4040,7 @@ function AdminAvailability() {
                 }
                 className="mt-2 w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm text-foreground"
               >
-                {durationOptions.map((value) => (
+                {paidDurationOptions.map((value) => (
                   <option key={value} value={value}>
                     {value} min
                   </option>
@@ -3282,6 +4067,169 @@ function AdminAvailability() {
               ))}
             </select>
           </label>
+        </div>
+      </Card>
+      <Card className="mb-5 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="display text-2xl">Online payment prices</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Prices are in Canadian dollars. Only active combinations appear in
+              client booking.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                setPriceDraft((current) => [
+                  ...current,
+                  {
+                    serviceType: "individual",
+                    durationMin: 50,
+                    amountCents: 10000,
+                    active: true,
+                  },
+                ])
+              }
+            >
+              Add price
+            </Button>
+            <Button
+              disabled={updatePrices.isPending}
+              onClick={() =>
+                updatePrices.mutate(
+                  { data: priceDraft },
+                  {
+                    onSuccess: () =>
+                      void invalidate(
+                        getGetAdminPricesQueryKey(),
+                        getGetPublicPracticeQueryKey(),
+                      ),
+                  },
+                )
+              }
+            >
+              Save prices
+            </Button>
+          </div>
+        </div>
+        <div className="mt-5 space-y-3">
+          {priceDraft.map((price, index) => (
+            <div
+              key={`${price.serviceType}-${price.durationMin}-${index}`}
+              className="grid gap-3 rounded-xl bg-muted p-3 md:grid-cols-[1.5fr_.7fr_.8fr_auto_auto]"
+            >
+              <select
+                value={price.serviceType}
+                onChange={(event) =>
+                  setPriceDraft((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? {
+                            ...item,
+                            serviceType: event.target
+                              .value as ServicePrice["serviceType"],
+                          }
+                        : item,
+                    ),
+                  )
+                }
+                className="rounded-xl border border-input bg-card px-3 py-2 text-sm"
+              >
+                {paidServiceTypes.map((service) => (
+                  <option key={service} value={service}>
+                    {serviceNames[service]}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={price.durationMin}
+                onChange={(event) =>
+                  setPriceDraft((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? {
+                            ...item,
+                            durationMin: Number(
+                              event.target.value,
+                            ) as ServicePrice["durationMin"],
+                          }
+                        : item,
+                    ),
+                  )
+                }
+                className="rounded-xl border border-input bg-card px-3 py-2 text-sm"
+              >
+                {paidDurationOptions.map((duration) => (
+                  <option key={duration} value={duration}>
+                    {duration} min
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center rounded-xl border border-input bg-card px-3">
+                <span className="mr-1 text-sm">$</span>
+                <input
+                  type="number"
+                  min="0.50"
+                  step="0.01"
+                  value={(price.amountCents / 100).toFixed(2)}
+                  onChange={(event) =>
+                    setPriceDraft((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              amountCents: Math.round(
+                                Number(event.target.value) * 100,
+                              ),
+                            }
+                          : item,
+                      ),
+                    )
+                  }
+                  className="w-full bg-transparent py-2 text-sm outline-none"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={price.active}
+                  onChange={(event) =>
+                    setPriceDraft((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, active: event.target.checked }
+                          : item,
+                      ),
+                    )
+                  }
+                />
+                Active
+              </label>
+              <button
+                onClick={() =>
+                  setPriceDraft((current) =>
+                    current.filter((_, itemIndex) => itemIndex !== index),
+                  )
+                }
+                className="px-2 text-destructive"
+                aria-label="Remove price"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+          {!priceDraft.length && (
+            <p className="text-sm text-muted-foreground">
+              Add at least one price before enabling paid booking.
+            </p>
+          )}
+          {updatePrices.isError && (
+            <p className="text-sm text-destructive">
+              {updatePrices.error.message}
+            </p>
+          )}
         </div>
       </Card>
       <div className="space-y-3">
@@ -3548,6 +4496,10 @@ function Router() {
         <Route path="/" component={Landing} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/reset-password" component={ResetPassword} />
+        <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/verify-email-change" component={VerifyEmailChange} />
         <Route
           path="/client/book"
           component={() => (
@@ -3617,6 +4569,14 @@ function Router() {
           component={() => (
             <AuthGate>
               <AdminWaitlist />
+            </AuthGate>
+          )}
+        />
+        <Route
+          path="/admin/account"
+          component={() => (
+            <AuthGate>
+              <AdminAccount />
             </AuthGate>
           )}
         />

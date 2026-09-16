@@ -6,24 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface RegisterInput {
+export interface ChangePasswordInput {
   /**
      * @minLength 1
-     * @maxLength 255
+     * @maxLength 128
      */
-  name: string;
-  /** @maxLength 320 */
-  email: string;
+  currentPassword: string;
   /**
      * @minLength 12
      * @maxLength 128
      */
-  password: string;
-  /** @maxLength 50 */
-  phone?: string;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     */
-  timezone?: string;
+  newPassword: string;
 }

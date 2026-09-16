@@ -32,7 +32,9 @@ export const LoginResponse = zod.object({
   "email": zod.string().email(),
   "name": zod.string(),
   "role": zod.enum(['client', 'admin']),
-  "timezone": zod.string()
+  "timezone": zod.string(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable()
 })
 
 
@@ -43,7 +45,7 @@ export const registerBodyNameMax = 255;
 
 export const registerBodyEmailMax = 320;
 
-export const registerBodyPasswordMin = 8;
+export const registerBodyPasswordMin = 12;
 export const registerBodyPasswordMax = 128;
 
 export const registerBodyPhoneMax = 50;
@@ -65,7 +67,9 @@ export const RegisterResponse = zod.object({
   "email": zod.string().email(),
   "name": zod.string(),
   "role": zod.enum(['client', 'admin']),
-  "timezone": zod.string()
+  "timezone": zod.string(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable()
 })
 
 
@@ -83,7 +87,129 @@ export const GetCurrentUserResponse = zod.object({
   "email": zod.string().email(),
   "name": zod.string(),
   "role": zod.enum(['client', 'admin']),
-  "timezone": zod.string()
+  "timezone": zod.string(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable()
+})
+
+
+/**
+ * @summary Send a new email verification link
+ */
+export const ResendVerificationResponse = zod.void()
+
+
+/**
+ * @summary Verify a client email address
+ */
+export const verifyEmailBodyTokenMin = 32;
+export const verifyEmailBodyTokenMax = 256;
+
+
+
+export const VerifyEmailBody = zod.object({
+  "token": zod.string().min(verifyEmailBodyTokenMin).max(verifyEmailBodyTokenMax)
+})
+
+export const VerifyEmailResponse = zod.object({
+  "id": zod.number().int(),
+  "email": zod.string().email(),
+  "name": zod.string(),
+  "role": zod.enum(['client', 'admin']),
+  "timezone": zod.string(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable()
+})
+
+
+/**
+ * @summary Request a password reset email
+ */
+export const forgotPasswordBodyEmailMax = 320;
+
+
+
+export const ForgotPasswordBody = zod.object({
+  "email": zod.string().email().max(forgotPasswordBodyEmailMax)
+})
+
+export const ForgotPasswordResponse = zod.void()
+
+
+/**
+ * @summary Reset a password using an emailed token
+ */
+export const resetPasswordBodyTokenMin = 32;
+export const resetPasswordBodyTokenMax = 256;
+
+export const resetPasswordBodyPasswordMin = 12;
+export const resetPasswordBodyPasswordMax = 128;
+
+
+
+export const ResetPasswordBody = zod.object({
+  "token": zod.string().min(resetPasswordBodyTokenMin).max(resetPasswordBodyTokenMax),
+  "password": zod.string().min(resetPasswordBodyPasswordMin).max(resetPasswordBodyPasswordMax)
+})
+
+export const ResetPasswordResponse = zod.void()
+
+
+/**
+ * @summary Change the current user's password
+ */
+export const changePasswordBodyCurrentPasswordMax = 128;
+
+export const changePasswordBodyNewPasswordMin = 12;
+export const changePasswordBodyNewPasswordMax = 128;
+
+
+
+export const ChangePasswordBody = zod.object({
+  "currentPassword": zod.string().min(1).max(changePasswordBodyCurrentPasswordMax),
+  "newPassword": zod.string().min(changePasswordBodyNewPasswordMin).max(changePasswordBodyNewPasswordMax)
+})
+
+export const ChangePasswordResponse = zod.void()
+
+
+/**
+ * @summary Request a verified account email change
+ */
+export const changeEmailBodyEmailMax = 320;
+
+export const changeEmailBodyCurrentPasswordMax = 128;
+
+
+
+export const ChangeEmailBody = zod.object({
+  "email": zod.string().email().max(changeEmailBodyEmailMax),
+  "currentPassword": zod.string().min(1).max(changeEmailBodyCurrentPasswordMax)
+})
+
+export const ChangeEmailResponse = zod.void()
+
+
+/**
+ * @summary Complete an account email change
+ */
+export const verifyEmailChangeBodyTokenMin = 32;
+export const verifyEmailChangeBodyTokenMax = 256;
+
+
+
+export const VerifyEmailChangeBody = zod.object({
+  "token": zod.string().min(verifyEmailChangeBodyTokenMin).max(verifyEmailChangeBodyTokenMax)
+})
+
+export const VerifyEmailChangeResponse = zod.object({
+  "id": zod.number().int(),
+  "email": zod.string().email(),
+  "name": zod.string(),
+  "role": zod.enum(['client', 'admin']),
+  "timezone": zod.string(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable()
 })
 
 
@@ -92,7 +218,7 @@ export const GetCurrentUserResponse = zod.object({
  */
 export const GetPublicSlotsQueryParams = zod.object({
   "date": zod.date(),
-  "duration": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)])
+  "duration": zod.union([zod.literal(15),zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)])
 })
 
 export const GetPublicSlotsResponse = zod.object({
@@ -118,9 +244,23 @@ export const GetPublicSlotsResponse = zod.object({
 /**
  * @summary Get public practice timezone and booking settings
  */
+export const getPublicPracticeResponsePricesItemAmountCentsMin = 50;
+export const getPublicPracticeResponsePricesItemAmountCentsMax = 1000000;
+
+
+
 export const GetPublicPracticeResponse = zod.object({
   "timezone": zod.string(),
-  "settings": zod.record(zod.string(), zod.number())
+  "settings": zod.record(zod.string(), zod.number()),
+  "prices": zod.array(zod.object({
+  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "amountCents": zod.number().int().min(getPublicPracticeResponsePricesItemAmountCentsMin).max(getPublicPracticeResponsePricesItemAmountCentsMax),
+  "active": zod.boolean()
+})),
+  "paymentsConfigured": zod.boolean(),
+  "emailConfigured": zod.boolean(),
+  "meetingConfigured": zod.boolean()
 })
 
 
@@ -135,10 +275,14 @@ export const GetClientDashboardResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })),
   "past": zod.array(zod.object({
   "id": zod.number().int(),
@@ -147,16 +291,20 @@ export const GetClientDashboardResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })),
   "waitlist": zod.array(zod.object({
   "id": zod.number().int(),
   "clientId": zod.number().int(),
   "clientName": zod.string(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "preferredDay": zod.number().int(),
   "preferredTimeWindow": zod.enum(['morning', 'afternoon', 'evening']),
   "status": zod.enum(['waiting', 'offered', 'converted', 'expired', 'slot_available']),
@@ -174,7 +322,10 @@ export const GetClientProfileResponse = zod.object({
   "name": zod.string(),
   "phone": zod.string().nullable(),
   "timezone": zod.string(),
-  "notes": zod.string().nullable()
+  "notes": zod.string().nullable(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable(),
+  "consultationAvailable": zod.boolean()
 })
 
 
@@ -197,7 +348,10 @@ export const UpdateClientProfileResponse = zod.object({
   "name": zod.string(),
   "phone": zod.string().nullable(),
   "timezone": zod.string(),
-  "notes": zod.string().nullable()
+  "notes": zod.string().nullable(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable(),
+  "consultationAvailable": zod.boolean()
 })
 
 
@@ -211,10 +365,14 @@ export const GetClientAppointmentsResponseItem = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })
 export const GetClientAppointmentsResponse = zod.array(GetClientAppointmentsResponseItem)
 
@@ -233,10 +391,41 @@ export const CancelClientAppointmentResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Create or retry Stripe Checkout for a pending appointment
+ */
+export const CreateAppointmentCheckoutParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const CreateAppointmentCheckoutResponse = zod.object({
+  "checkoutUrl": zod.string().url()
+})
+
+
+/**
+ * @summary Get time-gated Upheal meeting access
+ */
+export const GetAppointmentMeetingParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const GetAppointmentMeetingResponse = zod.object({
+  "available": zod.boolean(),
+  "joinUrl": zod.string().url().nullable(),
+  "availableFrom": zod.coerce.date(),
+  "availableUntil": zod.coerce.date()
 })
 
 
@@ -249,7 +438,7 @@ export const createWaitlistEntryBodyPreferredDayMax = 6;
 
 
 export const CreateWaitlistEntryBody = zod.object({
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "preferredDay": zod.number().int().min(createWaitlistEntryBodyPreferredDayMin).max(createWaitlistEntryBodyPreferredDayMax),
   "preferredTimeWindow": zod.enum(['morning', 'afternoon', 'evening'])
 })
@@ -258,7 +447,7 @@ export const CreateWaitlistEntryResponse = zod.object({
   "id": zod.number().int(),
   "clientId": zod.number().int(),
   "clientName": zod.string(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "preferredDay": zod.number().int(),
   "preferredTimeWindow": zod.enum(['morning', 'afternoon', 'evening']),
   "status": zod.enum(['waiting', 'offered', 'converted', 'expired', 'slot_available']),
@@ -273,23 +462,36 @@ export const CreateAppointmentBody = zod.object({
   "clientId": zod.number().int(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
-  "durationMin": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.union([zod.literal(15),zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
   "notes": zod.string().nullish()
 })
 
 export const CreateAppointmentResponse = zod.object({
+  "appointment": zod.object({
   "id": zod.number().int(),
   "clientId": zod.number().int(),
   "clientName": zod.string(),
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
+}),
+  "checkoutUrl": zod.string().url().nullable()
 })
+
+
+/**
+ * @summary Receive signed Stripe events
+ */
+export const ReceiveStripeWebhookResponse = zod.unknown()
 
 
 /**
@@ -306,10 +508,14 @@ export const GetAdminSummaryResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 }).optional()
 })
 
@@ -334,10 +540,14 @@ export const GetAdminCalendarResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })),
   "blockedTimes": zod.array(zod.object({
   "startTime": zod.coerce.date(),
@@ -354,7 +564,7 @@ export const GetAdminCalendarResponse = zod.object({
  * @summary List appointments for management
  */
 export const GetAdminAppointmentsQueryParams = zod.object({
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']).optional(),
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']).optional(),
   "clientId": zod.coerce.number().int().optional(),
   "start": zod.date().optional(),
   "end": zod.date().optional()
@@ -367,10 +577,14 @@ export const GetAdminAppointmentsResponseItem = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })
 export const GetAdminAppointmentsResponse = zod.array(GetAdminAppointmentsResponseItem)
 
@@ -383,7 +597,7 @@ export const GetAdminAppointmentsResponse = zod.array(GetAdminAppointmentsRespon
 
 export const BulkUpdateAdminAppointmentsBody = zod.object({
   "ids": zod.array(zod.number().int()).min(1),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show'])
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show'])
 })
 
 export const BulkUpdateAdminAppointmentsResponseItem = zod.object({
@@ -393,10 +607,14 @@ export const BulkUpdateAdminAppointmentsResponseItem = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })
 export const BulkUpdateAdminAppointmentsResponse = zod.array(BulkUpdateAdminAppointmentsResponseItem)
 
@@ -411,9 +629,9 @@ export const UpdateAdminAppointmentParams = zod.object({
 export const UpdateAdminAppointmentBody = zod.object({
   "startTime": zod.coerce.date().optional(),
   "endTime": zod.coerce.date().optional(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']).optional(),
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']).optional(),
   "notes": zod.string().nullish(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']).optional(),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']).optional(),
   "durationMin": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]).optional()
 })
 
@@ -424,10 +642,14 @@ export const UpdateAdminAppointmentResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })
 
 
@@ -464,7 +686,10 @@ export const GetAdminClientResponse = zod.object({
   "name": zod.string(),
   "phone": zod.string().nullable(),
   "timezone": zod.string(),
-  "notes": zod.string().nullable()
+  "notes": zod.string().nullable(),
+  "emailVerified": zod.boolean(),
+  "pendingEmail": zod.string().email().nullable(),
+  "consultationAvailable": zod.boolean()
 }),
   "appointments": zod.array(zod.object({
   "id": zod.number().int(),
@@ -473,10 +698,14 @@ export const GetAdminClientResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })),
   "notes": zod.array(zod.object({
   "id": zod.number().int(),
@@ -512,13 +741,48 @@ export const CreateClientNoteResponse = zod.object({
 
 
 /**
+ * @summary Restore a client's one-time free consultation eligibility
+ */
+export const RestoreClientConsultationParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const RestoreClientConsultationResponse = zod.void()
+
+
+/**
+ * @summary Refund a paid appointment through Stripe
+ */
+export const RefundAdminAppointmentParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const RefundAdminAppointmentResponse = zod.object({
+  "id": zod.number().int(),
+  "clientId": zod.number().int(),
+  "clientName": zod.string(),
+  "clientEmail": zod.string().email(),
+  "startTime": zod.coerce.date(),
+  "endTime": zod.coerce.date(),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.number().int(),
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
+})
+
+
+/**
  * @summary List waitlist entries
  */
 export const GetAdminWaitlistResponseItem = zod.object({
   "id": zod.number().int(),
   "clientId": zod.number().int(),
   "clientName": zod.string(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "preferredDay": zod.number().int(),
   "preferredTimeWindow": zod.enum(['morning', 'afternoon', 'evening']),
   "status": zod.enum(['waiting', 'offered', 'converted', 'expired', 'slot_available']),
@@ -538,8 +802,8 @@ export const ConvertWaitlistEntryBody = zod.object({
   "clientId": zod.number().int(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
-  "durationMin": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.union([zod.literal(15),zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
   "notes": zod.string().nullish()
 })
 
@@ -550,10 +814,14 @@ export const ConvertWaitlistEntryResponse = zod.object({
   "clientEmail": zod.string().email(),
   "startTime": zod.coerce.date(),
   "endTime": zod.coerce.date(),
-  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "serviceType": zod.enum(['consultation', 'couples', 'individual', 'child_teen', 'christian_counseling']),
   "durationMin": zod.number().int(),
-  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
-  "notes": zod.string().nullable()
+  "status": zod.enum(['pending_payment', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "notes": zod.string().nullable(),
+  "amountCents": zod.number().int().nullable(),
+  "currency": zod.string(),
+  "paymentStatus": zod.enum(['not_required', 'pending', 'paid', 'refunded', 'failed']),
+  "paymentExpiresAt": zod.coerce.date().nullable()
 })
 
 
@@ -664,6 +932,61 @@ export const UpdateAdminSettingsResponse = zod.object({
   "child_teen": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
   "christian_counseling": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)])
 })
+})
+
+
+/**
+ * @summary List configured service-duration prices
+ */
+export const getAdminPricesResponseAmountCentsMin = 50;
+export const getAdminPricesResponseAmountCentsMax = 1000000;
+
+
+
+export const GetAdminPricesResponseItem = zod.object({
+  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "amountCents": zod.number().int().min(getAdminPricesResponseAmountCentsMin).max(getAdminPricesResponseAmountCentsMax),
+  "active": zod.boolean()
+})
+export const GetAdminPricesResponse = zod.array(GetAdminPricesResponseItem)
+
+
+/**
+ * @summary Replace service-duration price configuration
+ */
+export const updateAdminPricesBodyAmountCentsMin = 50;
+export const updateAdminPricesBodyAmountCentsMax = 1000000;
+
+
+
+export const UpdateAdminPricesBodyItem = zod.object({
+  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "amountCents": zod.number().int().min(updateAdminPricesBodyAmountCentsMin).max(updateAdminPricesBodyAmountCentsMax),
+  "active": zod.boolean()
+})
+export const UpdateAdminPricesBody = zod.array(UpdateAdminPricesBodyItem)
+
+export const updateAdminPricesResponseAmountCentsMin = 50;
+export const updateAdminPricesResponseAmountCentsMax = 1000000;
+
+
+
+export const UpdateAdminPricesResponseItem = zod.object({
+  "serviceType": zod.enum(['couples', 'individual', 'child_teen', 'christian_counseling']),
+  "durationMin": zod.union([zod.literal(30),zod.literal(45),zod.literal(50),zod.literal(60),zod.literal(80),zod.literal(90),zod.literal(120)]),
+  "amountCents": zod.number().int().min(updateAdminPricesResponseAmountCentsMin).max(updateAdminPricesResponseAmountCentsMax),
+  "active": zod.boolean()
+})
+export const UpdateAdminPricesResponse = zod.array(UpdateAdminPricesResponseItem)
+
+
+/**
+ * @summary Send due appointment reminders using a cron secret
+ */
+export const SendAppointmentRemindersResponse = zod.object({
+  "sent": zod.number().int()
 })
 
 

@@ -6,8 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PublicPracticeSettings } from './publicPracticeSettings';
+import type { ServicePrice } from './servicePrice';
 
 export interface PublicPractice {
   timezone: string;
   settings: PublicPracticeSettings;
+  prices: ServicePrice[];
+  paymentsConfigured: boolean;
+  emailConfigured: boolean;
+  meetingConfigured: boolean;
 }

@@ -6,11 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ServiceType = typeof ServiceType[keyof typeof ServiceType];
+export type ServicePriceServiceType = typeof ServicePriceServiceType[keyof typeof ServicePriceServiceType];
 
 
-export const ServiceType = {
-  consultation: 'consultation',
+export const ServicePriceServiceType = {
   couples: 'couples',
   individual: 'individual',
   child_teen: 'child_teen',

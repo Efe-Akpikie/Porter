@@ -15,4 +15,8 @@ export interface UserProfile {
   timezone: string;
   /** @nullable */
   notes: string | null;
+  emailVerified: boolean;
+  /** @nullable */
+  pendingEmail: string | null;
+  consultationAvailable: boolean;
 }
