@@ -450,7 +450,9 @@ function Landing() {
                 className="absolute inset-x-0 top-0 h-[390px] w-full object-contain object-bottom drop-shadow-xl"
               />
               <div className="absolute inset-x-3 bottom-0 rounded-2xl border border-white/60 bg-[#f7f0e5]/95 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
-                <p className="display text-2xl text-[#263b39]">Lara Akinpelu</p>
+                <p className="display text-2xl text-[#263b39]">
+                  Lara Akinpelu, MS
+                </p>
                 <p className="mt-2 text-sm text-[#536762]">
                   Registered Provisional Psychologist
                 </p>
@@ -471,16 +473,49 @@ function Landing() {
             </h2>
           </div>
           <div className="space-y-7 text-muted-foreground">
-            <p className="leading-7">[Insert extended bio]</p>
+            <div className="space-y-5 leading-7">
+              <p>
+                Lara Akinpelu, MS, is a Registered Provisional Psychologist
+                with the College of Alberta Psychologists. She holds a
+                master&apos;s degree in General Psychology from Walden
+                University in Minneapolis, Minnesota, and has completed the
+                core counseling psychology coursework required for
+                provisional registration in Alberta. She has also completed
+                1,600 hours of supervised practice.
+              </p>
+              <p>
+                Lara is passionate about working with couples and believes
+                that healthy relationships help nurture emotionally stable
+                children, strong families, and healthy communities. In her
+                pursuit of further training in couples counseling, she
+                completed Levels 1 and 2 of Gottman Couples Therapy training.
+                She has also completed Beck Cognitive Behavior Therapy
+                training focused on depression and suicide prevention.
+              </p>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl bg-muted p-5">
+              <div className="flex flex-col rounded-2xl bg-muted p-5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-secondary">
                   Education & certifications
                 </p>
                 <p className="mt-3 leading-7">
-                  Master&apos;s in General Psychology · Gottman-trained ·
-                  Certified Autism Specialist
+                  MS, General Psychology · Gottman Couples Therapy, Levels 1
+                  and 2 · Beck Cognitive Behavior Therapy training · Certified
+                  Autism Specialist
                 </p>
+                <a
+                  href="https://apps.ibcces.org/badges/v/1969967"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Verify Lara Akinpelu's Certified Autism Specialist credential in a new tab"
+                  className="mt-5 flex flex-1 items-center justify-center rounded-xl bg-white p-4 transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <img
+                    src="/images/certified-autism-specialist.png"
+                    alt="Lara Akinpelu, Certified Autism Specialist"
+                    className="h-40 w-auto object-contain"
+                  />
+                </a>
               </div>
               <div className="rounded-2xl bg-muted p-5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-secondary">
